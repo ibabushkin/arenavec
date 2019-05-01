@@ -496,7 +496,7 @@ impl<T> SliceVec<T> {
         let ptr: *mut T =
             self.slice._inner.allocate_or_extend(self.slice.ptr, self.capacity, new_capacity);
 
-        if ptr != self.slice.ptr {
+        if self.slice.ptr != ptr::null_mut() && ptr != self.slice.ptr {
             unsafe {
                 ptr::copy_nonoverlapping(self.slice.ptr, ptr, self.slice.len);
             }
@@ -515,7 +515,7 @@ impl<T> SliceVec<T> {
                                                      self.capacity,
                                                      new_capacity);
 
-            if self.slice.ptr != ptr {
+            if self.slice.ptr != ptr::null_mut() && self.slice.ptr != ptr {
                 unsafe {
                     ptr::copy_nonoverlapping(self.slice.ptr, ptr, self.slice.len);
                 }
