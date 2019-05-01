@@ -1,5 +1,5 @@
-#[cfg(feature = "serde")]
-use std::alloc::dealloc;
+/* #[cfg(feature = "serde")]
+use std::alloc::dealloc; */
 use std::alloc::Layout;
 use std::cell::Cell;
 use std::cmp;
@@ -12,8 +12,8 @@ use std::ptr;
 use std::rc::Rc;
 use std::slice;
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+/* #[cfg(feature = "serde")]
+use serde::{Deserialize, Deserializer, Serialize, Serializer}; */
 
 /// The owning object of the arena.
 ///
@@ -353,7 +353,7 @@ impl<T> Drop for Slice<T> {
     }
 }
 
-#[cfg(feature = "serde")]
+/* #[cfg(feature = "serde")]
 impl<T> Serialize for Slice<T>
 where
     T: Serialize,
@@ -368,14 +368,14 @@ where
 }
 
 #[cfg(feature = "serde")]
-impl<T> Deserialize for Slice<T>
+impl<'de, T> Deserialize<'de> for Slice<T>
 where
-    T: Deserialize,
+    T: Deserialize<'de>,
 {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer,
+        D: Deserializer<'de>,
     {
         let mut res: Vec<T> = Deserialize::deserialize(deserializer)?;
         let mut slice = Slice::new(res.len());
@@ -390,7 +390,7 @@ where
 
         slice
     }
-}
+} */
 
 impl<'a, T> IntoIterator for &'a Slice<T> {
     type Item = &'a T;
@@ -578,7 +578,7 @@ impl<T: PartialOrd> PartialOrd for SliceVec<T> {
     fn default() -> Self {
         SliceVec::new(0)
     }
-} */
+}
 
 #[cfg(feature = "serde")]
 impl<T> Serialize for SliceVec<T>
@@ -594,7 +594,7 @@ where
     }
 }
 
-/* impl<T> FromIterator<T> for SliceVec<T> {
+impl<T> FromIterator<T> for SliceVec<T> {
     fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item=T>
