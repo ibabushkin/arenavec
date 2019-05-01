@@ -10,7 +10,7 @@ mod isolated {
 
     #[test]
     fn init_empty() {
-        let arena = Arena::init_capacity(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
 
         let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
 
@@ -20,7 +20,7 @@ mod isolated {
 
     #[test]
     fn init_capacity() {
-        let arena = Arena::init_capacity(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
 
         let mut vec = SliceVec::new(arena.inner(), 10);
 
@@ -37,7 +37,7 @@ mod isolated {
 
     #[test]
     fn init_empty_push() {
-        let arena = Arena::init_capacity(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
 
         let mut vec = SliceVec::new(arena.inner(), 0);
 
@@ -64,7 +64,7 @@ mod isolated {
 
     #[test]
     fn reserve_and_resize() {
-        let arena = Arena::init_capacity(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
 
         let mut vec = SliceVec::new(arena.inner(), 0);
 
@@ -139,7 +139,7 @@ mod rand_static {
     proptest! {
         #[test]
         fn rand_op_sec(mut seq in arb_op_seq(NUM_VECS, NUM_OPS)) {
-            let arena = Arena::init_capacity(DEFAULT_CAPACITY);
+            let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
             let mut vecs = Vec::with_capacity(NUM_VECS);
             let mut slice_vecs = Vec::with_capacity(NUM_VECS);
 
@@ -227,7 +227,7 @@ mod rand_dynamic {
     proptest! {
         #[test]
         fn rand_op_sec(mut seq in arb_op_seq(NUM_VECS, NUM_OPS)) {
-            let arena = Arena::init_capacity(DEFAULT_CAPACITY);
+            let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
             let mut vecs: Vec<Option<Vec<usize>>> = vec![None; NUM_VECS];
             let mut slice_vecs: Vec<Option<SliceVec<usize>>> = vec![None; NUM_VECS];
 

@@ -1,6 +1,6 @@
 /* #[cfg(feature = "serde")]
 use std::alloc::dealloc; */
-use std::alloc::Layout;
+use std::alloc::{alloc, Layout};
 use std::cell::Cell;
 use std::cmp;
 use std::fmt;
@@ -83,19 +83,10 @@ pub struct SliceIterMut<'a, T: 'a> {
 
 impl Arena {
     #[cfg(unix)]
-    fn create_mapping(capacity: usize) -> *mut u8 {
-        let ptr = unsafe {
-            libc::mmap(
-                ptr::null_mut(),
-                capacity,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_ANON | libc::MAP_PRIVATE,
-                -1,
-                0,
-            )
-        };
-
-        ptr as *mut u8
+    fn get_page_size() -> usize {
+        unsafe {
+            libc::sysconf(libc::_SC_PAGESIZE) as usize
+        }
     }
 
     #[cfg(windows)]
@@ -109,6 +100,22 @@ impl Arena {
 
             info.dwPageSize as usize
         }
+    }
+
+    #[cfg(unix)]
+    fn create_mapping(capacity: usize) -> *mut u8 {
+        let ptr = unsafe {
+            libc::mmap(
+                ptr::null_mut(),
+                capacity,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_ANON | libc::MAP_PRIVATE,
+                -1,
+                0,
+            )
+        };
+
+        ptr as *mut u8
     }
 
     #[cfg(windows)]
@@ -145,6 +152,21 @@ impl Arena {
 
         Arena(InnerRef {
             inner: Rc::new(Inner { head, pos, cap, }),
+        })
+    }
+
+    fn create_mapping_alloc(capacity: usize) -> *mut u8 {
+        unsafe {
+            alloc(Layout::from_size_align_unchecked(capacity, Arena::get_page_size()))
+        }
+    }
+
+    pub fn init_capacity_alloc(cap: usize) -> Arena {
+        let head = Arena::create_mapping_alloc(cap);
+        let pos = Cell::new(0);
+
+        Arena(InnerRef {
+            inner: Rc::new(Inner { head, pos, cap }),
         })
     }
 
