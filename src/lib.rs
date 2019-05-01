@@ -1,6 +1,4 @@
-/* #[cfg(feature = "serde")]
-use std::alloc::dealloc; */
-use std::alloc::{alloc, Layout};
+use std::alloc::{alloc, dealloc, Layout};
 use std::cell::Cell;
 use std::cmp;
 use std::fmt;
@@ -17,12 +15,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer}; */
 
 /// The owning object of the arena.
 ///
-/// Stored in a thread-local variable to be accessible everywhere in the owning thread.
+/// Can be stored in a thread-local variable to be accessible everywhere in the owning thread.
 /// This is the only instance that can be used to allocate and clear the arena. All other
 /// objects referring to the arena merely keep it alive, and are present to avoid arena
-/// clearing while they are live.
+/// clearing while they are live. Also keeps track of how the backing memory has been acquired.
 #[derive(Debug)]
-pub struct Arena(InnerRef);
+pub struct Arena(InnerRef, bool);
 
 /// A non-owning object of the arena.
 ///
@@ -152,7 +150,7 @@ impl Arena {
 
         Arena(InnerRef {
             inner: Rc::new(Inner { head, pos, cap, }),
-        })
+        }, false)
     }
 
     fn create_mapping_alloc(capacity: usize) -> *mut u8 {
@@ -167,7 +165,7 @@ impl Arena {
 
         Arena(InnerRef {
             inner: Rc::new(Inner { head, pos, cap }),
-        })
+        }, true)
     }
 
     /// Create another reference to the arena's guts.
@@ -197,26 +195,44 @@ impl Deref for Arena {
 #[cfg(unix)]
 impl Drop for Arena {
     fn drop(&mut self) {
-        let res = unsafe {
-            libc::munmap(self.inner.head as *mut libc::c_void, self.inner.cap)
-        };
+        if self.1 {
+            unsafe {
+                let layout =
+                    Layout::from_size_align_unchecked(self.0.inner.cap, Arena::get_page_size());
+                dealloc(self.inner.head, layout)
+            }
+        } else {
+            let res = unsafe {
+                libc::munmap(self.inner.head as *mut libc::c_void, self.inner.cap)
+            };
 
-        // TODO: Do something on error
-        debug_assert_eq!(res, 0);
+            // TODO: Do something on error
+            debug_assert_eq!(res, 0);
+        }
     }
 }
 
 #[cfg(windows)]
 impl Drop for Arena {
     fn drop(&mut self) {
-        use winapi::shared::minwindef::LPVOID;
-        use winapi::um::memoryapi::VirtualFree;
-        use winapi::um::winnt::MEM_RELEASE;
+        if self.1 {
+            unsafe {
+                let layout =
+                    Layout::from_size_align_unchecked(self.0.capacity, Arena::get_page_size());
+                dealloc(self.inner.head, layout)
+            }
+        } else {
+            use winapi::shared::minwindef::LPVOID;
+            use winapi::um::memoryapi::VirtualFree;
+            use winapi::um::winnt::MEM_RELEASE;
 
-        let res = unsafe { VirtualFree(self.inner.head as LPVOID, 0, MEM_RELEASE) };
+            let res = unsafe {
+                VirtualFree(self.inner.head as LPVOID, 0, MEM_RELEASE)
+            };
 
-        // TODO: Do something on error
-        debug_assert_ne!(res, 0);
+            // TODO: Do something on error
+            debug_assert_ne!(res, 0);
+        }
     }
 }
 
