@@ -269,6 +269,10 @@ impl InnerRef {
     fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize)
         -> *mut T
     {
+        if ptr == ptr::null_mut() {
+            return self.allocate(count);
+        }
+
         let pos = self.inner.pos.get();
         let next = unsafe { self.inner.head.offset(pos as isize) };
         let end = unsafe { ptr.offset(old_count as isize) };
