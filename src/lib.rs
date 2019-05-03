@@ -82,9 +82,7 @@ pub struct SliceIterMut<'a, T: 'a> {
 impl Arena {
     #[cfg(unix)]
     fn get_page_size() -> usize {
-        unsafe {
-            libc::sysconf(libc::_SC_PAGESIZE) as usize
-        }
+        unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
     }
 
     #[cfg(windows)]
@@ -122,7 +120,7 @@ impl Arena {
         use winapi::shared::basetsd::SIZE_T;
         use winapi::shared::minwindef::LPVOID;
         use winapi::um::memoryapi::VirtualAlloc;
-        use winapi::um::winnt::{PAGE_READWRITE, MEM_COMMIT, MEM_RESERVE};
+        use winapi::um::winnt::{MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE};
 
         let lpAddress: LPVOID = ptr::null_mut();
         let page_size = get_page_size();
@@ -134,9 +132,7 @@ impl Arena {
         let flAllocationType = MEM_COMMIT | MEM_RESERVE;
         let flProtect = PAGE_READWRITE;
 
-        let r = unsafe {
-            VirtualAlloc(lpAddress, len as SIZE_T, flAllocationType, flProtect)
-        };
+        let r = unsafe { VirtualAlloc(lpAddress, len as SIZE_T, flAllocationType, flProtect) };
 
         r as *mut u8
     }
@@ -148,14 +144,20 @@ impl Arena {
         let head = Arena::create_mapping(cap);
         let pos = Cell::new(0);
 
-        Arena(InnerRef {
-            inner: Rc::new(Inner { head, pos, cap, }),
-        }, false)
+        Arena(
+            InnerRef {
+                inner: Rc::new(Inner { head, pos, cap }),
+            },
+            false,
+        )
     }
 
     fn create_mapping_alloc(capacity: usize) -> *mut u8 {
         unsafe {
-            alloc(Layout::from_size_align_unchecked(capacity, Arena::get_page_size()))
+            alloc(Layout::from_size_align_unchecked(
+                capacity,
+                Arena::get_page_size(),
+            ))
         }
     }
 
@@ -163,9 +165,12 @@ impl Arena {
         let head = Arena::create_mapping_alloc(cap);
         let pos = Cell::new(0);
 
-        Arena(InnerRef {
-            inner: Rc::new(Inner { head, pos, cap }),
-        }, true)
+        Arena(
+            InnerRef {
+                inner: Rc::new(Inner { head, pos, cap }),
+            },
+            true,
+        )
     }
 
     /// Create another reference to the arena's guts.
@@ -202,9 +207,7 @@ impl Drop for Arena {
                 dealloc(self.inner.head, layout)
             }
         } else {
-            let res = unsafe {
-                libc::munmap(self.inner.head as *mut libc::c_void, self.inner.cap)
-            };
+            let res = unsafe { libc::munmap(self.inner.head as *mut libc::c_void, self.inner.cap) };
 
             // TODO: Do something on error
             debug_assert_eq!(res, 0);
@@ -226,9 +229,7 @@ impl Drop for Arena {
             use winapi::um::memoryapi::VirtualFree;
             use winapi::um::winnt::MEM_RELEASE;
 
-            let res = unsafe {
-                VirtualFree(self.inner.head as LPVOID, 0, MEM_RELEASE)
-            };
+            let res = unsafe { VirtualFree(self.inner.head as LPVOID, 0, MEM_RELEASE) };
 
             // TODO: Do something on error
             debug_assert_ne!(res, 0);
@@ -253,8 +254,12 @@ impl InnerRef {
 
         let additional = skip + layout.size() * count;
 
-        assert!(pos + additional <= self.inner.cap,
-                "arena overflow: {} > {}", pos + additional, self.inner.cap);
+        assert!(
+            pos + additional <= self.inner.cap,
+            "arena overflow: {} > {}",
+            pos + additional,
+            self.inner.cap
+        );
 
         self.inner.pos.set(pos + additional);
 
@@ -266,9 +271,7 @@ impl InnerRef {
         ret
     }
 
-    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize)
-        -> *mut T
-    {
+    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T {
         if ptr.is_null() {
             return self.allocate(count);
         }
@@ -277,7 +280,9 @@ impl InnerRef {
         let next = unsafe { self.inner.head.offset(pos as isize) };
         let end = unsafe { ptr.offset(old_count as isize) };
         if next == end as *mut u8 {
-            self.inner.pos.set(pos + (count - old_count) * mem::size_of::<T>());
+            self.inner
+                .pos
+                .set(pos + (count - old_count) * mem::size_of::<T>());
 
             ptr
         } else {
@@ -341,7 +346,10 @@ impl<T: Clone> Clone for Slice<T> {
 
         for i in 0..self.len {
             unsafe {
-                ptr::write(ptr.offset(i as isize), (*self.ptr.offset(i as isize)).clone());
+                ptr::write(
+                    ptr.offset(i as isize),
+                    (*self.ptr.offset(i as isize)).clone(),
+                );
             }
         }
 
@@ -464,7 +472,7 @@ impl<T> SliceVec<T> {
             slice: Slice {
                 ptr,
                 len: 0,
-                _inner: inner.clone()
+                _inner: inner.clone(),
             },
             capacity,
         }
@@ -494,7 +502,9 @@ impl<T> SliceVec<T> {
         }
 
         let ptr: *mut T =
-            self.slice._inner.allocate_or_extend(self.slice.ptr, self.capacity, new_capacity);
+            self.slice
+                ._inner
+                .allocate_or_extend(self.slice.ptr, self.capacity, new_capacity);
 
         if !self.slice.ptr.is_null() && ptr != self.slice.ptr {
             unsafe {
@@ -509,11 +519,15 @@ impl<T> SliceVec<T> {
 
     pub fn push(&mut self, elem: T) {
         if self.slice.len == self.capacity {
-            let new_capacity = if self.capacity == 0 { 4 } else { self.capacity * 2 };
+            let new_capacity = if self.capacity == 0 {
+                4
+            } else {
+                self.capacity * 2
+            };
             let ptr: *mut T =
-                self.slice._inner.allocate_or_extend(self.slice.ptr,
-                                                     self.capacity,
-                                                     new_capacity);
+                self.slice
+                    ._inner
+                    .allocate_or_extend(self.slice.ptr, self.capacity, new_capacity);
 
             if !self.slice.ptr.is_null() && self.slice.ptr != ptr {
                 unsafe {
@@ -541,10 +555,8 @@ impl<T> SliceVec<T> {
             self.reserve(len);
         }
 
-        for i in self.slice.len .. len.saturating_sub(1) {
-            unsafe {
-                ptr::write(self.slice.ptr.offset(i as isize), value.clone())
-            }
+        for i in self.slice.len..len.saturating_sub(1) {
+            unsafe { ptr::write(self.slice.ptr.offset(i as isize), value.clone()) }
         }
 
         if len > self.slice.len {
@@ -567,7 +579,10 @@ impl<T: Clone> Clone for SliceVec<T> {
 
         for i in 0..self.slice.len {
             unsafe {
-                ptr::write(ptr.offset(i as isize), (*self.slice.ptr.offset(i as isize)).clone());
+                ptr::write(
+                    ptr.offset(i as isize),
+                    (*self.slice.ptr.offset(i as isize)).clone(),
+                );
             }
         }
 
@@ -721,7 +736,7 @@ impl<'a, T> DoubleEndedIterator for SliceIter<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for SliceIter<'a, T> { }
+impl<'a, T> ExactSizeIterator for SliceIter<'a, T> {}
 
 impl<'a, T> Iterator for SliceIterMut<'a, T> {
     type Item = &'a mut T;
@@ -771,4 +786,4 @@ impl<'a, T> DoubleEndedIterator for SliceIterMut<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for SliceIterMut<'a, T> { }
+impl<'a, T> ExactSizeIterator for SliceIterMut<'a, T> {}
