@@ -24,6 +24,7 @@ before_script: |
   fi
 script: |
   if [[ "$TRAVIS_RUST_VERSION" == nightly-2019-05-03 ]]; then
+    cargo install --git https://github.com/RalfJung/xargo -f
     cargo clean
     cargo miri test
   else
