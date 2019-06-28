@@ -183,7 +183,7 @@ mod rand_static {
 
                 let mut file =
                     OpenOptions::new().create(true).append(true).open("static").unwrap();
-                writeln!(file, "{:?}", seq);
+                writeln!(file, "{:?}", seq).unwrap();
                 rand_op_seq_inner(seq);
             }
         }
@@ -1147,7 +1147,7 @@ mod rand_dynamic {
 
                 let mut file =
                     OpenOptions::new().create(true).append(true).open("dynamic").unwrap();
-                writeln!(file, "{:?}", seq);
+                writeln!(file, "{:?}", seq).unwrap();
                 rand_op_seq_inner(seq);
             }
         }
