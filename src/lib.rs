@@ -263,7 +263,7 @@ impl InnerRef {
 
         self.inner.pos.set(pos + additional);
 
-        let ret = unsafe { self.inner.head.offset((pos + skip) as isize) as *mut T };
+        let ret = unsafe { self.inner.head.add(pos + skip) as *mut T };
 
         debug_assert!((ret as usize) >= self.inner.head as usize);
         debug_assert!((ret as usize) < (self.inner.head as usize + self.inner.cap));
@@ -277,8 +277,8 @@ impl InnerRef {
         }
 
         let pos = self.inner.pos.get();
-        let next = unsafe { self.inner.head.offset(pos as isize) };
-        let end = unsafe { ptr.offset(old_count as isize) };
+        let next = unsafe { self.inner.head.add(pos) };
+        let end = unsafe { ptr.add(old_count) };
         if next == end as *mut u8 {
             self.inner
                 .pos
@@ -300,7 +300,7 @@ impl<T> Slice<T> {
 
         for i in 0..len {
             unsafe {
-                ptr::write(ptr.offset(i as isize), T::default());
+                ptr::write(ptr.add(i), T::default());
             }
         }
 
@@ -346,10 +346,7 @@ impl<T: Clone> Clone for Slice<T> {
 
         for i in 0..self.len {
             unsafe {
-                ptr::write(
-                    ptr.offset(i as isize),
-                    (*self.ptr.offset(i as isize)).clone(),
-                );
+                ptr::write(ptr.add(i), (*self.ptr.add(i)).clone());
             }
         }
 
@@ -541,7 +538,7 @@ impl<T> SliceVec<T> {
         }
 
         unsafe {
-            ptr::write(self.slice.ptr.offset(self.slice.len as isize), elem);
+            ptr::write(self.slice.ptr.add(self.slice.len), elem);
         }
 
         self.slice.len += 1;
@@ -556,12 +553,12 @@ impl<T> SliceVec<T> {
         }
 
         for i in self.slice.len..len.saturating_sub(1) {
-            unsafe { ptr::write(self.slice.ptr.offset(i as isize), value.clone()) }
+            unsafe { ptr::write(self.slice.ptr.add(i), value.clone()) }
         }
 
         if len > self.slice.len {
             unsafe {
-                ptr::write(self.slice.ptr.offset(len as isize - 1), value);
+                ptr::write(self.slice.ptr.add(len - 1), value);
             }
         }
 
@@ -579,10 +576,7 @@ impl<T: Clone> Clone for SliceVec<T> {
 
         for i in 0..self.slice.len {
             unsafe {
-                ptr::write(
-                    ptr.offset(i as isize),
-                    (*self.slice.ptr.offset(i as isize)).clone(),
-                );
+                ptr::write(ptr.add(i), (*self.slice.ptr.add(i)).clone());
             }
         }
 
