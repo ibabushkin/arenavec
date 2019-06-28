@@ -10,6 +10,12 @@ use std::ptr;
 use std::rc::Rc;
 use std::slice;
 
+#[derive(Debug)]
+pub enum ArenaBacking {
+    MemoryMap,
+    SystemAllocation,
+}
+
 /* #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer}; */
 
@@ -20,7 +26,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer}; */
 /// objects referring to the arena merely keep it alive, and are present to avoid arena
 /// clearing while they are live. Also keeps track of how the backing memory has been acquired.
 #[derive(Debug)]
-pub struct Arena(InnerRef, bool);
+pub struct Arena(InnerRef, ArenaBacking);
 
 /// A non-owning object of the arena.
 ///
@@ -148,7 +154,7 @@ impl Arena {
             InnerRef {
                 inner: Rc::new(Inner { head, pos, cap }),
             },
-            false,
+            ArenaBacking::MemoryMap,
         )
     }
 
@@ -169,7 +175,7 @@ impl Arena {
             InnerRef {
                 inner: Rc::new(Inner { head, pos, cap }),
             },
-            true,
+            ArenaBacking::SystemAllocation,
         )
     }
 
@@ -200,17 +206,19 @@ impl Deref for Arena {
 #[cfg(unix)]
 impl Drop for Arena {
     fn drop(&mut self) {
-        if self.1 {
-            unsafe {
+        match self.1 {
+            ArenaBacking::MemoryMap => {
+                let res =
+                    unsafe { libc::munmap(self.inner.head as *mut libc::c_void, self.inner.cap) };
+
+                // TODO: Do something on error
+                debug_assert_eq!(res, 0);
+            }
+            ArenaBacking::SystemAllocation => unsafe {
                 let layout =
                     Layout::from_size_align_unchecked(self.0.inner.cap, Arena::get_page_size());
                 dealloc(self.inner.head, layout)
-            }
-        } else {
-            let res = unsafe { libc::munmap(self.inner.head as *mut libc::c_void, self.inner.cap) };
-
-            // TODO: Do something on error
-            debug_assert_eq!(res, 0);
+            },
         }
     }
 }
