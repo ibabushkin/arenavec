@@ -11,7 +11,7 @@ mod isolated {
 
     #[test]
     fn init_empty() {
-        {
+        if cfg!(not(miri)) {
             let arena = Arena::init_capacity(ArenaBacking::MemoryMap, DEFAULT_CAPACITY);
 
             let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
