@@ -1,6 +1,7 @@
 use proptest::collection;
 use proptest::prelude::*;
 
+use arenavec::ArenaBacking;
 use arenavec::rc::{Arena, SliceVec};
 
 const DEFAULT_CAPACITY: usize = 4096 << 16;
@@ -10,17 +11,28 @@ mod isolated {
 
     #[test]
     fn init_empty() {
-        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
+        {
+            let arena = Arena::init_capacity(ArenaBacking::MemoryMap, DEFAULT_CAPACITY);
 
-        let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
+            let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
 
-        assert_eq!(vec.len(), 0);
-        assert_eq!(vec.capacity(), 0);
+            assert_eq!(vec.len(), 0);
+            assert_eq!(vec.capacity(), 0);
+        }
+
+        {
+            let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+
+            let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
+
+            assert_eq!(vec.len(), 0);
+            assert_eq!(vec.capacity(), 0);
+        }
     }
 
     #[test]
     fn init_capacity() {
-        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
 
         let mut vec = SliceVec::new(arena.inner(), 10);
 
@@ -37,7 +49,7 @@ mod isolated {
 
     #[test]
     fn init_empty_push() {
-        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
 
         let mut vec = SliceVec::new(arena.inner(), 0);
 
@@ -64,7 +76,7 @@ mod isolated {
 
     #[test]
     fn reserve_and_resize() {
-        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
 
         let mut vec = SliceVec::new(arena.inner(), 0);
 
@@ -136,7 +148,7 @@ mod rand_static {
     const NUM_VECS: usize = 8;
 
     fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>) {
-        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
         let mut vecs = Vec::with_capacity(NUM_VECS);
         let mut slice_vecs = Vec::with_capacity(NUM_VECS);
 
@@ -1057,7 +1069,7 @@ mod rand_dynamic {
     const NUM_VECS: usize = 16;
 
     fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>) {
-        let arena = Arena::init_capacity_alloc(DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
         let mut vecs: Vec<Option<Vec<usize>>> = vec![None; NUM_VECS];
         let mut slice_vecs: Vec<Option<SliceVec<usize>>> = vec![None; NUM_VECS];
 

@@ -85,27 +85,20 @@ impl Arena {
     /// Create an `Arena` with specified capacity.
     ///
     /// Capacity must be a power of 2. The capacity cannot be grown after the fact.
-    pub fn init_capacity(cap: usize) -> Arena {
-        let head = common::create_mapping(cap);
+    pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Arena {
+        let head = match backing {
+            ArenaBacking::MemoryMap =>
+                common::create_mapping(cap),
+            ArenaBacking::SystemAllocation =>
+                common::create_mapping_alloc(cap),
+        };
         let pos = Cell::new(0);
 
         Arena(
             InnerRef {
                 inner: Rc::new(Inner { head, pos, cap }),
             },
-            ArenaBacking::MemoryMap,
-        )
-    }
-
-    pub fn init_capacity_alloc(cap: usize) -> Arena {
-        let head = common::create_mapping_alloc(cap);
-        let pos = Cell::new(0);
-
-        Arena(
-            InnerRef {
-                inner: Rc::new(Inner { head, pos, cap }),
-            },
-            ArenaBacking::SystemAllocation,
+            backing,
         )
     }
 
