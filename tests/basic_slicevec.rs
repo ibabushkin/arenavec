@@ -1,7 +1,7 @@
 use proptest::collection;
 use proptest::prelude::*;
 
-use arenavec::{Arena, SliceVec};
+use arenavec::rc::{Arena, SliceVec};
 
 const DEFAULT_CAPACITY: usize = 4096 << 16;
 
