@@ -1,5 +1,6 @@
 use crate::common::{self, ArenaBacking};
 
+use std::alloc::Layout;
 use std::cell::Cell;
 use std::marker;
 
@@ -32,7 +33,9 @@ pub struct Arena {
 /// The intention is to ensure exclusive allocation access and to tag allocated objects with
 /// the lifetime.
 #[derive(Debug)]
-pub struct ArenaToken<'a>(&'a Arena);
+pub struct ArenaToken<'a>{
+    inner: &'a Arena,
+}
 
 #[derive(Debug)]
 pub struct Slice<'a, T> {
@@ -65,9 +68,53 @@ impl Arena {
         if self.locked.get() {
             Err(ArenaError::AlreadyLocked)
         } else {
-            Ok(ArenaToken(self))
+            Ok(ArenaToken{ inner: self })
         }
     }
 }
 
-// TODO: impl Drop for ArenaToken
+impl<'a> ArenaToken<'a> {
+    pub fn allocate<T>(&self, count: usize) -> Slice<'a, T> {
+        let layout = Layout::new::<T>();
+        let mask = layout.align() - 1;
+        let pos = self.inner.pos.get();
+
+        debug_assert!(layout.align() >= (pos & mask));
+
+        // let align = Ord::max(layout.align(), 64);
+        let mut skip = 64 - (pos & mask);
+
+        if skip == layout.align() {
+            skip = 0;
+        }
+
+        let additional = skip + layout.size() * count;
+
+        assert!(
+            pos + additional <= self.inner.cap,
+            "arena overflow: {} > {}",
+            pos + additional,
+            self.inner.cap
+        );
+
+        self.inner.pos.set(pos + additional);
+
+        let ret = unsafe { self.inner.head.add(pos + skip) as *mut T };
+
+        debug_assert!((ret as usize) >= self.inner.head as usize);
+        debug_assert!((ret as usize) < (self.inner.head as usize + self.inner.cap));
+
+        Slice {
+            ptr: ret,
+            len: count,
+            _phantom: marker::PhantomData,
+        }
+    }
+}
+
+impl<'a> Drop for ArenaToken<'a> {
+    fn drop(&mut self) {
+        self.inner.pos.set(0);
+        self.inner.locked.set(false);
+    }
+}
