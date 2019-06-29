@@ -1,6 +1,6 @@
 use crate::common::{self, ArenaBacking};
 
-use std::alloc::{dealloc, Layout};
+use std::alloc::Layout;
 use std::cell::Cell;
 use std::cmp;
 use std::fmt;
@@ -133,44 +133,15 @@ impl Deref for Arena {
     }
 }
 
-#[cfg(unix)]
 impl Drop for Arena {
     fn drop(&mut self) {
         match self.1 {
             ArenaBacking::MemoryMap => {
-                let res =
-                    unsafe { libc::munmap(self.inner.head as *mut libc::c_void, self.inner.cap) };
-
-                // TODO: Do something on error
-                debug_assert_eq!(res, 0);
+                common::destroy_mapping(self.inner.head, self.inner.cap);
             }
-            ArenaBacking::SystemAllocation => unsafe {
-                let layout =
-                    Layout::from_size_align_unchecked(self.0.inner.cap, common::get_page_size());
-                dealloc(self.inner.head, layout)
+            ArenaBacking::SystemAllocation => {
+                common::destroy_mapping_alloc(self.inner.head, self.inner.cap);
             },
-        }
-    }
-}
-
-#[cfg(windows)]
-impl Drop for Arena {
-    fn drop(&mut self) {
-        if self.1 {
-            unsafe {
-                let layout =
-                    Layout::from_size_align_unchecked(self.0.capacity, common::get_page_size());
-                dealloc(self.inner.head, layout)
-            }
-        } else {
-            use winapi::shared::minwindef::LPVOID;
-            use winapi::um::memoryapi::VirtualFree;
-            use winapi::um::winnt::MEM_RELEASE;
-
-            let res = unsafe { VirtualFree(self.inner.head as LPVOID, 0, MEM_RELEASE) };
-
-            // TODO: Do something on error
-            debug_assert_ne!(res, 0);
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::alloc::{alloc, Layout};
+use std::alloc::{alloc, dealloc, Layout};
 use std::ptr;
 
 #[derive(Debug)]
@@ -70,5 +70,42 @@ pub(crate) fn create_mapping_alloc(capacity: usize) -> *mut u8 {
             capacity,
             get_page_size(),
         ))
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn destroy_mapping(base: *mut u8, capacity: usize) {
+    let res =
+        unsafe { libc::munmap(base as *mut libc::c_void, capacity) };
+
+    // TODO: Do something on error
+    debug_assert_eq!(res, 0);
+}
+
+#[cfg(windows)]
+pub(crate) fn destroy_mapping(base: *mut u8, capacity: usize) {
+    if self.1 {
+        unsafe {
+            let layout =
+                Layout::from_size_align_unchecked(self.0.capacity, common::get_page_size());
+            dealloc(self.inner.head, layout)
+        }
+    } else {
+        use winapi::shared::minwindef::LPVOID;
+        use winapi::um::memoryapi::VirtualFree;
+        use winapi::um::winnt::MEM_RELEASE;
+
+        let res = unsafe { VirtualFree(self.inner.head as LPVOID, 0, MEM_RELEASE) };
+
+        // TODO: Do something on error
+        debug_assert_ne!(res, 0);
+    }
+}
+
+pub(crate) fn destroy_mapping_alloc(base: *mut u8, capacity: usize) {
+    unsafe {
+        let layout =
+            Layout::from_size_align_unchecked(capacity, get_page_size());
+        dealloc(base, layout);
     }
 }
