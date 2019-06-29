@@ -85,7 +85,7 @@ impl Arena {
     /// Create an `Arena` with specified capacity.
     ///
     /// Capacity must be a power of 2. The capacity cannot be grown after the fact.
-    pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Arena {
+    pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Self {
         let head = match backing {
             ArenaBacking::MemoryMap =>
                 common::create_mapping(cap),
