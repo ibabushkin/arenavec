@@ -1,4 +1,9 @@
 use std::alloc::{alloc, dealloc, Layout};
+use std::cmp;
+use std::fmt;
+use std::marker;
+use std::mem;
+use std::ops::{Deref, DerefMut};
 use std::ptr;
 
 #[derive(Debug)]
@@ -6,6 +11,370 @@ pub enum ArenaBacking {
     MemoryMap,
     SystemAllocation,
 }
+
+pub trait AllocHandle {
+    fn allocate<T>(&self, count: usize) -> *mut T;
+    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T;
+}
+
+pub trait ArenaSlice {
+    type Item;
+    type AllocHandle;
+
+    fn get_alloc_handle(&self) -> Self::AllocHandle;
+    fn ptr(&self) -> *mut Self::Item;
+    fn len(&self) -> usize;
+    fn set_ptr(&mut self, ptr: *mut Self::Item);
+    fn set_len(&mut self, len: usize);
+    // unsafe fn from_raw(handle: Self::AllocHandle, ptr: *mut Self::Item, len: usize) -> Self;
+    // unsafe fn into_raw(self) -> (Self::AllocHandle, *mut Self::Item, usize);
+    unsafe fn new_empty(handle: Self::AllocHandle, real_len: usize) -> Self;
+    fn iter<'a>(&'a self) -> SliceIter<'a, Self::Item>;
+    fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, Self::Item>;
+}
+
+/// An arena allocated, sequential, resizable vector
+///
+/// Since the arena does not support resizing, or freeing memory, this implementation just
+/// creates new slices as necessary and leaks the previous arena allocation, trading memory
+/// for speed.
+pub struct SliceVec<S> {
+    slice: S,
+    // owo what's this
+    capacity: usize,
+}
+
+/// An iterator over a sequence of arena-allocated objects
+#[derive(Debug)]
+pub struct SliceIter<'a, T> {
+    pub(crate) ptr: *const T,
+    pub(crate) end: *const T,
+    pub(crate) _marker: marker::PhantomData<&'a T>,
+}
+
+/// An iterator over a mutable sequence of arena-allocated objects
+#[derive(Debug)]
+pub struct SliceIterMut<'a, T> {
+    pub(crate) ptr: *mut T,
+    pub(crate) end: *mut T,
+    pub(crate) _marker: marker::PhantomData<&'a T>,
+}
+
+impl<S, T> SliceVec<S>
+where
+    S: ArenaSlice<Item = T>,
+{
+    pub fn iter<'a>(&'a self) -> SliceIter<'a, T> {
+        self.slice.iter()
+    }
+
+    pub fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, T> {
+        self.slice.iter_mut()
+    }
+}
+
+impl<S, T> SliceVec<S>
+where
+    S: ArenaSlice<Item = T>,
+    <S as ArenaSlice>::AllocHandle: AllocHandle,
+{
+    pub fn new(inner: <S as ArenaSlice>::AllocHandle, capacity: usize) -> Self {
+        SliceVec {
+            slice: unsafe { S::new_empty(inner, capacity) },
+            capacity,
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn push(&mut self, elem: T) {
+        if self.slice.len() == self.capacity {
+            let new_capacity = if self.capacity == 0 {
+                4
+            } else {
+                self.capacity * 2
+            };
+            let ptr: *mut T = self.slice.get_alloc_handle().allocate_or_extend(
+                self.slice.ptr(),
+                self.capacity,
+                new_capacity,
+            );
+
+            if !self.slice.ptr().is_null() && self.slice.ptr() != ptr {
+                unsafe {
+                    ptr::copy_nonoverlapping(self.slice.ptr(), ptr, self.slice.len());
+                }
+
+                self.slice.set_ptr(ptr);
+            }
+
+            self.capacity = new_capacity;
+        }
+
+        unsafe {
+            ptr::write(self.slice.ptr().add(self.slice.len()), elem);
+        }
+
+        self.slice.set_len(self.slice.len() + 1);
+    }
+
+    pub fn reserve(&mut self, size: usize) {
+        let mut new_ptr = self.slice.ptr();
+        let new_len = self.slice.len();
+        let handle = self.slice.get_alloc_handle();
+
+        if self.capacity >= size {
+            return;
+        }
+
+        let mut new_capacity = if self.capacity > 0 { self.capacity } else { 4 };
+
+        while new_capacity < size {
+            new_capacity *= 2;
+        }
+
+        let ptr: *mut T = handle.allocate_or_extend(
+            new_ptr,
+            self.capacity,
+            new_capacity,
+        );
+
+        if !ptr.is_null() && ptr != new_ptr {
+            unsafe {
+                ptr::copy_nonoverlapping(new_ptr, ptr, new_len);
+            }
+
+            new_ptr = ptr;
+        }
+
+        self.capacity = new_capacity;
+        self.slice.set_ptr(new_ptr);
+        self.slice.set_len(new_len);
+    }
+
+    pub fn resize(&mut self, len: usize, value: T)
+    where
+        T: Clone,
+    {
+        if self.capacity < len {
+            self.reserve(len);
+        }
+
+        for i in self.slice.len()..len.saturating_sub(1) {
+            unsafe { ptr::write(self.slice.ptr().add(i), value.clone()) }
+        }
+
+        if len > self.slice.len() {
+            unsafe {
+                ptr::write(self.slice.ptr().add(len - 1), value);
+            }
+        }
+
+        self.slice.set_len(len);
+    }
+
+    pub fn clear(&mut self) {
+        self.slice.set_len(0);
+    }
+}
+
+impl<S, T> Clone for SliceVec<S>
+where
+    S: ArenaSlice<Item = T>,
+    <S as ArenaSlice>::AllocHandle: AllocHandle,
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        let mut vec: SliceVec<S> = SliceVec::new(self.slice.get_alloc_handle(), self.capacity);
+
+        for i in 0..self.slice.len() {
+            unsafe {
+                ptr::write(vec.slice.ptr().add(i), (*self.slice.ptr().add(i)).clone());
+            }
+        }
+
+        vec.slice.set_len(self.slice.len());
+
+        vec
+    }
+}
+
+impl<S: fmt::Debug> fmt::Debug for SliceVec<S> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.slice.fmt(fmt)
+    }
+}
+
+impl<S: Deref> Deref for SliceVec<S> {
+    type Target = <S as Deref>::Target;
+
+    fn deref(&self) -> &<S as Deref>::Target {
+        self.slice.deref()
+    }
+}
+
+impl<S, T> DerefMut for SliceVec<S>
+where
+    S: DerefMut,
+    S: ArenaSlice<Item = T>,
+{
+    fn deref_mut(&mut self) -> &mut <S as std::ops::Deref>::Target {
+        self.slice.deref_mut()
+    }
+}
+
+impl<S> Eq for SliceVec<S>
+where
+    S: Deref,
+    <S as Deref>::Target: Eq,
+{
+}
+
+impl<S> PartialEq for SliceVec<S>
+where
+    S: Deref,
+    <S as Deref>::Target: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.deref().eq(other.deref())
+    }
+}
+
+impl<S> PartialOrd for SliceVec<S>
+where
+    S: Deref,
+    <S as Deref>::Target: PartialOrd,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        self.deref().partial_cmp(other.deref())
+    }
+}
+
+impl<'a, S, T: 'a> IntoIterator for &'a SliceVec<S>
+where
+    S: ArenaSlice<Item = T>,
+{
+    type Item = &'a T;
+    type IntoIter = SliceIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, S, T: 'a> IntoIterator for &'a mut SliceVec<S>
+where
+    S: ArenaSlice<Item = T>,
+{
+    type Item = &'a mut T;
+    type IntoIter = SliceIterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+impl<'a, T> Iterator for SliceIter<'a, T> {
+    type Item = &'a T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ptr == self.end {
+            None
+        } else {
+            unsafe {
+                // FIXME:
+                // we do not support ZSTs right now, the stdlib does some dancing
+                // for this which we can safely avoid for now
+                let old = self.ptr;
+                self.ptr = self.ptr.offset(1);
+                Some(&*old)
+            }
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // let len = unsafe { self.end.offset_from(self.ptr) } as usize;
+        let ptr = self.ptr;
+        let diff = (self.end as usize).wrapping_sub(ptr as usize);
+        let len = diff / mem::size_of::<T>();
+
+        (len, Some(len))
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for SliceIter<'a, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.ptr == self.end {
+            None
+        } else {
+            unsafe {
+                // FIXME:
+                // we do not support ZSTs right now, the stdlib does some dancing
+                // for this which we can safely avoid for now
+                let old = self.end;
+                self.end = self.end.offset(-1);
+                Some(&*old)
+            }
+        }
+    }
+}
+
+impl<'a, T> ExactSizeIterator for SliceIter<'a, T> {}
+
+impl<'a, T> Iterator for SliceIterMut<'a, T> {
+    type Item = &'a mut T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ptr == self.end {
+            None
+        } else {
+            unsafe {
+                // FIXME:
+                // we do not support ZSTs right now, the stdlib does some dancing
+                // for this which we can safely avoid for now
+                let old = self.ptr;
+                self.ptr = self.ptr.offset(1);
+                Some(&mut *old)
+            }
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // let len = unsafe { self.end.offset_from(self.ptr) } as usize;
+        let ptr = self.ptr;
+        let diff = (self.end as usize).wrapping_sub(ptr as usize);
+        let len = diff / mem::size_of::<T>();
+
+        (len, Some(len))
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for SliceIterMut<'a, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.ptr == self.end {
+            None
+        } else {
+            unsafe {
+                // FIXME:
+                // we do not support ZSTs right now, the stdlib does some dancing
+                // for this which we can safely avoid for now
+                let old = self.end;
+                self.end = self.end.offset(-1);
+                Some(&mut *old)
+            }
+        }
+    }
+}
+
+impl<'a, T> ExactSizeIterator for SliceIterMut<'a, T> {}
 
 #[cfg(unix)]
 pub(crate) fn get_page_size() -> usize {
@@ -65,18 +434,12 @@ pub(crate) fn create_mapping(capacity: usize) -> *mut u8 {
 }
 
 pub(crate) fn create_mapping_alloc(capacity: usize) -> *mut u8 {
-    unsafe {
-        alloc(Layout::from_size_align_unchecked(
-            capacity,
-            get_page_size(),
-        ))
-    }
+    unsafe { alloc(Layout::from_size_align_unchecked(capacity, get_page_size())) }
 }
 
 #[cfg(unix)]
 pub(crate) fn destroy_mapping(base: *mut u8, capacity: usize) {
-    let res =
-        unsafe { libc::munmap(base as *mut libc::c_void, capacity) };
+    let res = unsafe { libc::munmap(base as *mut libc::c_void, capacity) };
 
     // TODO: Do something on error
     debug_assert_eq!(res, 0);
@@ -104,8 +467,7 @@ pub(crate) fn destroy_mapping(base: *mut u8, capacity: usize) {
 
 pub(crate) fn destroy_mapping_alloc(base: *mut u8, capacity: usize) {
     unsafe {
-        let layout =
-            Layout::from_size_align_unchecked(capacity, get_page_size());
+        let layout = Layout::from_size_align_unchecked(capacity, get_page_size());
         dealloc(base, layout);
     }
 }

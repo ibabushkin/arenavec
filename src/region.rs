@@ -2,7 +2,6 @@ use crate::common::{self, ArenaBacking};
 
 use std::alloc::Layout;
 use std::cell::Cell;
-use std::marker;
 
 #[derive(Debug)]
 pub enum ArenaError {
@@ -32,7 +31,7 @@ pub struct Arena {
 ///
 /// The intention is to ensure exclusive allocation access and to tag allocated objects with
 /// the lifetime.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ArenaToken<'a>{
     inner: &'a Arena,
 }
@@ -41,7 +40,7 @@ pub struct ArenaToken<'a>{
 pub struct Slice<'a, T> {
     ptr: *mut T,
     len: usize,
-    _phantom: marker::PhantomData<&'a T>,
+    token: ArenaToken<'a>,
 }
 
 impl Arena {
@@ -107,7 +106,7 @@ impl<'a> ArenaToken<'a> {
         Slice {
             ptr: ret,
             len: count,
-            _phantom: marker::PhantomData,
+            token: self.clone(),
         }
     }
 }
@@ -118,3 +117,5 @@ impl<'a> Drop for ArenaToken<'a> {
         self.inner.locked.set(false);
     }
 }
+
+// TODO: Drop for Slice

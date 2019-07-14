@@ -1,8 +1,8 @@
 use proptest::collection;
 use proptest::prelude::*;
 
-use arenavec::ArenaBacking;
 use arenavec::rc::{Arena, SliceVec};
+use arenavec::ArenaBacking;
 
 const DEFAULT_CAPACITY: usize = 4096 << 16;
 
@@ -147,7 +147,7 @@ mod rand_static {
 
     const NUM_VECS: usize = 8;
 
-    fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>) {
+    fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>) {
         let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
         let mut vecs = Vec::with_capacity(NUM_VECS);
         let mut slice_vecs = Vec::with_capacity(NUM_VECS);
@@ -161,6 +161,12 @@ mod rand_static {
         }
 
         for (v, op) in seq.drain(..) {
+            if let Some(s) = filter {
+                if !s.contains(&v) {
+                    continue;
+                }
+            }
+
             match op {
                 SliceVecOp::Push(e) => {
                     vecs[v].push(e);
@@ -196,7 +202,7 @@ mod rand_static {
                 let mut file =
                     OpenOptions::new().create(true).append(true).open("static").unwrap();
                 writeln!(file, "{:?}", seq).unwrap();
-                rand_op_seq_inner(seq);
+                rand_op_seq_inner(seq, None);
             }
         }
     }
@@ -607,7 +613,7 @@ mod rand_static {
             (2, Resize(49, 6555181995891599849)),
             (6, Reserve(19)),
         ];
-        rand_op_seq_inner(seq);
+        rand_op_seq_inner(seq, None);
     }
 
     #[test]
@@ -1016,7 +1022,7 @@ mod rand_static {
             (5, Resize(73, 8276561271062403640)),
             (3, Reserve(10)),
         ];
-        rand_op_seq_inner(seq);
+        rand_op_seq_inner(seq, None);
     }
 }
 
@@ -1068,12 +1074,18 @@ mod rand_dynamic {
 
     const NUM_VECS: usize = 16;
 
-    fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>) {
+    fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>) {
         let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
         let mut vecs: Vec<Option<Vec<usize>>> = vec![None; NUM_VECS];
         let mut slice_vecs: Vec<Option<SliceVec<usize>>> = vec![None; NUM_VECS];
 
         for (v, op) in seq.drain(..) {
+            if let Some(s) = filter {
+                if !s.contains(&v) {
+                    continue;
+                }
+            }
+
             match op {
                 SliceVecOp::Push(e) => {
                     if let (&mut Some(ref mut r), &mut Some(ref mut r2)) =
@@ -1138,7 +1150,7 @@ mod rand_dynamic {
 
             for i in 0..NUM_VECS {
                 if let (&Some(ref r), &Some(ref r2)) = (&vecs[i], &slice_vecs[i]) {
-                    assert_eq!(&**r, &**r2);
+                    assert_eq!(**r, **r2);
                 } else if vecs[i].is_some() || slice_vecs[i].is_some() {
                     panic!("missing vec");
                 }
@@ -1160,7 +1172,7 @@ mod rand_dynamic {
                 let mut file =
                     OpenOptions::new().create(true).append(true).open("dynamic").unwrap();
                 writeln!(file, "{:?}", seq).unwrap();
-                rand_op_seq_inner(seq);
+                rand_op_seq_inner(seq, None);
             }
         }
     }
@@ -1971,7 +1983,7 @@ mod rand_dynamic {
             (3, Delete),
             (4, Clone(13)),
         ];
-        rand_op_seq_inner(seq);
+        rand_op_seq_inner(seq, None);
     }
 
     #[test]
@@ -2780,6 +2792,6 @@ mod rand_dynamic {
             (4, Delete),
             (15, Reserve(32)),
         ];
-        rand_op_seq_inner(seq);
+        rand_op_seq_inner(seq, None);
     }
 }

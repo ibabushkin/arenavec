@@ -1,4 +1,4 @@
-use crate::common::{self, ArenaBacking};
+use crate::common::{self, AllocHandle, ArenaBacking, ArenaSlice, SliceIter, SliceIterMut};
 
 use std::alloc::Layout;
 use std::cell::Cell;
@@ -54,32 +54,7 @@ pub struct Slice<T> {
     _inner: InnerRef,
 }
 
-/// An arena allocated, sequential, resizable vector
-///
-/// Since the arena does not support resizing, or freeing memory, this implementation just
-/// creates new slices as necessary and leaks the previous arena allocation, trading memory
-/// for speed.
-pub struct SliceVec<T> {
-    slice: Slice<T>,
-    // owo what's this
-    capacity: usize,
-}
-
-/// An iterator over a sequence of arena-allocated objects
-#[derive(Debug)]
-pub struct SliceIter<'a, T> {
-    ptr: *const T,
-    end: *const T,
-    _marker: marker::PhantomData<&'a T>,
-}
-
-/// An iterator over a mutable sequence of arena-allocated objects
-#[derive(Debug)]
-pub struct SliceIterMut<'a, T> {
-    ptr: *mut T,
-    end: *mut T,
-    _marker: marker::PhantomData<&'a T>,
-}
+pub type SliceVec<T> = common::SliceVec<Slice<T>>;
 
 impl Arena {
     /// Create an `Arena` with specified capacity.
@@ -87,10 +62,8 @@ impl Arena {
     /// Capacity must be a power of 2. The capacity cannot be grown after the fact.
     pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Self {
         let head = match backing {
-            ArenaBacking::MemoryMap =>
-                common::create_mapping(cap),
-            ArenaBacking::SystemAllocation =>
-                common::create_mapping_alloc(cap),
+            ArenaBacking::MemoryMap => common::create_mapping(cap),
+            ArenaBacking::SystemAllocation => common::create_mapping_alloc(cap),
         };
         let pos = Cell::new(0);
 
@@ -134,12 +107,12 @@ impl Drop for Arena {
             }
             ArenaBacking::SystemAllocation => {
                 common::destroy_mapping_alloc(self.inner.head, self.inner.cap);
-            },
+            }
         }
     }
 }
 
-impl InnerRef {
+impl AllocHandle for InnerRef {
     fn allocate<T>(&self, count: usize) -> *mut T {
         let layout = Layout::new::<T>();
         let mask = layout.align() - 1;
@@ -193,19 +166,31 @@ impl InnerRef {
     }
 }
 
-impl<T> Slice<T> {
-    pub fn new(inner: InnerRef, len: usize) -> Self
-    where
-        T: Default,
-    {
-        let ptr: *mut T = inner.allocate(len);
+impl<T> ArenaSlice for Slice<T> {
+    type Item = T;
+    type AllocHandle = InnerRef;
 
-        for i in 0..len {
-            unsafe {
-                ptr::write(ptr.add(i), T::default());
-            }
-        }
+    fn get_alloc_handle(&self) -> Self::AllocHandle {
+        self._inner.clone()
+    }
 
+    fn ptr(&self) -> *mut Self::Item {
+        self.ptr
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn set_ptr(&mut self, ptr: *mut Self::Item) {
+        self.ptr = ptr;
+    }
+
+    fn set_len(&mut self, len: usize) {
+        self.len = len;
+    }
+
+    /* unsafe fn from_raw(inner: Self::AllocHandle, ptr: *mut T, len: usize) -> Self {
         Slice {
             ptr,
             len,
@@ -213,7 +198,29 @@ impl<T> Slice<T> {
         }
     }
 
-    pub fn iter<'a>(&'a self) -> SliceIter<'a, T> {
+    unsafe fn into_raw(self) -> (Self::AllocHandle, *mut T, usize) {
+        let Self{ ptr, len, .. } = self;
+        let inner = mem::transmute_copy(&self._inner);
+        mem::forget(self);
+
+        (inner, ptr, len)
+    } */
+
+    unsafe fn new_empty(inner: Self::AllocHandle, real_len: usize) -> Self {
+        let ptr: *mut T = if real_len == 0 {
+            ptr::NonNull::dangling().as_ptr()
+        } else {
+            inner.allocate(real_len)
+        };
+
+        Slice {
+            ptr,
+            len: 0,
+            _inner: inner,
+        }
+    }
+
+    fn iter<'a>(&'a self) -> SliceIter<'a, T> {
         unsafe {
             // no ZST support
             let ptr = self.ptr;
@@ -227,7 +234,7 @@ impl<T> Slice<T> {
         }
     }
 
-    pub fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, T> {
+    fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, T> {
         unsafe {
             // no ZST support
             let ptr = self.ptr;
@@ -239,6 +246,24 @@ impl<T> Slice<T> {
                 _marker: marker::PhantomData,
             }
         }
+    }
+}
+
+impl<T> Slice<T> {
+    pub fn new(inner: InnerRef, len: usize) -> Self
+    where
+        T: Default,
+    {
+        let mut res = unsafe { Self::new_empty(inner, len) };
+        res.len = len;
+
+        for i in 0..len {
+            unsafe {
+                ptr::write(res.ptr.add(i), T::default());
+            }
+        }
+
+        res
     }
 }
 
@@ -359,181 +384,7 @@ impl<'a, T> IntoIterator for &'a mut Slice<T> {
     }
 }
 
-impl<T> SliceVec<T> {
-    pub fn new(inner: InnerRef, capacity: usize) -> Self {
-        let ptr: *mut T = if capacity == 0 {
-            ptr::NonNull::dangling().as_ptr()
-        } else {
-            inner.allocate(capacity)
-        };
-
-        SliceVec {
-            slice: Slice {
-                ptr,
-                len: 0,
-                _inner: inner.clone(),
-            },
-            capacity,
-        }
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.capacity
-    }
-
-    pub fn iter<'a>(&'a self) -> SliceIter<'a, T> {
-        self.slice.iter()
-    }
-
-    pub fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, T> {
-        self.slice.iter_mut()
-    }
-
-    pub fn reserve(&mut self, size: usize) {
-        if self.capacity >= size {
-            return;
-        }
-
-        let mut new_capacity = if self.capacity > 0 { self.capacity } else { 4 };
-
-        while new_capacity < size {
-            new_capacity *= 2;
-        }
-
-        let ptr: *mut T =
-            self.slice
-                ._inner
-                .allocate_or_extend(self.slice.ptr, self.capacity, new_capacity);
-
-        if !self.slice.ptr.is_null() && ptr != self.slice.ptr {
-            unsafe {
-                ptr::copy_nonoverlapping(self.slice.ptr, ptr, self.slice.len);
-            }
-
-            self.slice.ptr = ptr;
-        }
-
-        self.capacity = new_capacity;
-    }
-
-    pub fn push(&mut self, elem: T) {
-        if self.slice.len == self.capacity {
-            let new_capacity = if self.capacity == 0 {
-                4
-            } else {
-                self.capacity * 2
-            };
-            let ptr: *mut T =
-                self.slice
-                    ._inner
-                    .allocate_or_extend(self.slice.ptr, self.capacity, new_capacity);
-
-            if !self.slice.ptr.is_null() && self.slice.ptr != ptr {
-                unsafe {
-                    ptr::copy_nonoverlapping(self.slice.ptr, ptr, self.slice.len);
-                }
-
-                self.slice.ptr = ptr;
-            }
-
-            self.capacity = new_capacity;
-        }
-
-        unsafe {
-            ptr::write(self.slice.ptr.add(self.slice.len), elem);
-        }
-
-        self.slice.len += 1;
-    }
-
-    pub fn resize(&mut self, len: usize, value: T)
-    where
-        T: Clone,
-    {
-        if self.capacity < len {
-            self.reserve(len);
-        }
-
-        for i in self.slice.len..len.saturating_sub(1) {
-            unsafe { ptr::write(self.slice.ptr.add(i), value.clone()) }
-        }
-
-        if len > self.slice.len {
-            unsafe {
-                ptr::write(self.slice.ptr.add(len - 1), value);
-            }
-        }
-
-        self.slice.len = len;
-    }
-
-    pub fn clear(&mut self) {
-        self.slice.len = 0;
-    }
-}
-
-impl<T: Clone> Clone for SliceVec<T> {
-    fn clone(&self) -> Self {
-        let ptr: *mut T = self.slice._inner.allocate(self.capacity);
-
-        for i in 0..self.slice.len {
-            unsafe {
-                ptr::write(ptr.add(i), (*self.slice.ptr.add(i)).clone());
-            }
-        }
-
-        SliceVec {
-            slice: Slice {
-                ptr,
-                len: self.slice.len,
-                _inner: self.slice._inner.clone(),
-            },
-            capacity: self.capacity,
-        }
-    }
-}
-
-impl<T: fmt::Debug> fmt::Debug for SliceVec<T> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.slice.fmt(fmt)
-    }
-}
-
-impl<T> Deref for SliceVec<T> {
-    type Target = [T];
-
-    fn deref(&self) -> &[T] {
-        self.slice.deref()
-    }
-}
-
-impl<T> DerefMut for SliceVec<T> {
-    fn deref_mut(&mut self) -> &mut [T] {
-        self.slice.deref_mut()
-    }
-}
-
-impl<T: Eq> Eq for SliceVec<T> {}
-
-impl<T: PartialEq> PartialEq for SliceVec<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.deref().eq(other.deref())
-    }
-}
-
-impl<T: PartialOrd> PartialOrd for SliceVec<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        self.deref().partial_cmp(other.deref())
-    }
-}
-
-/* impl<T> Default for SliceVec<T> {
-    fn default() -> Self {
-        SliceVec::new(0)
-    }
-}
-
-#[cfg(feature = "serde")]
+/*#[cfg(feature = "serde")]
 impl<T> Serialize for SliceVec<T>
 where
     T: Serialize,
@@ -564,122 +415,4 @@ impl<T> FromIterator<T> for SliceVec<T> {
 
         res
     }
-} */
-
-impl<'a, T> IntoIterator for &'a SliceVec<T> {
-    type Item = &'a T;
-    type IntoIter = SliceIter<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a, T> IntoIterator for &'a mut SliceVec<T> {
-    type Item = &'a mut T;
-    type IntoIter = SliceIterMut<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
-
-impl<'a, T> Iterator for SliceIter<'a, T> {
-    type Item = &'a T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            unsafe {
-                // FIXME:
-                // we do not support ZSTs right now, the stdlib does some dancing
-                // for this which we can safely avoid for now
-                let old = self.ptr;
-                self.ptr = self.ptr.offset(1);
-                Some(&*old)
-            }
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        // let len = unsafe { self.end.offset_from(self.ptr) } as usize;
-        let ptr = self.ptr;
-        let diff = (self.end as usize).wrapping_sub(ptr as usize);
-        let len = diff / mem::size_of::<T>();
-
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for SliceIter<'a, T> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            unsafe {
-                // FIXME:
-                // we do not support ZSTs right now, the stdlib does some dancing
-                // for this which we can safely avoid for now
-                let old = self.end;
-                self.end = self.end.offset(-1);
-                Some(&*old)
-            }
-        }
-    }
-}
-
-impl<'a, T> ExactSizeIterator for SliceIter<'a, T> {}
-
-impl<'a, T> Iterator for SliceIterMut<'a, T> {
-    type Item = &'a mut T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            unsafe {
-                // FIXME:
-                // we do not support ZSTs right now, the stdlib does some dancing
-                // for this which we can safely avoid for now
-                let old = self.ptr;
-                self.ptr = self.ptr.offset(1);
-                Some(&mut *old)
-            }
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        // let len = unsafe { self.end.offset_from(self.ptr) } as usize;
-        let ptr = self.ptr;
-        let diff = (self.end as usize).wrapping_sub(ptr as usize);
-        let len = diff / mem::size_of::<T>();
-
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for SliceIterMut<'a, T> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            unsafe {
-                // FIXME:
-                // we do not support ZSTs right now, the stdlib does some dancing
-                // for this which we can safely avoid for now
-                let old = self.end;
-                self.end = self.end.offset(-1);
-                Some(&mut *old)
-            }
-        }
-    }
-}
-
-impl<'a, T> ExactSizeIterator for SliceIterMut<'a, T> {}
+}*/
