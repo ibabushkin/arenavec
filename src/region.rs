@@ -1,7 +1,14 @@
-use crate::common::{self, ArenaBacking};
+use crate::common::{self, AllocHandle, ArenaBacking, ArenaSlice, SliceIter, SliceIterMut};
 
 use std::alloc::Layout;
 use std::cell::Cell;
+use std::cmp;
+use std::fmt;
+use std::marker;
+use std::mem;
+use std::ops::{Deref, DerefMut};
+use std::ptr;
+use std::slice;
 
 #[derive(Debug)]
 pub enum ArenaError {
@@ -36,12 +43,13 @@ pub struct ArenaToken<'a>{
     inner: &'a Arena,
 }
 
-#[derive(Debug)]
 pub struct Slice<'a, T> {
     ptr: *mut T,
     len: usize,
     token: ArenaToken<'a>,
 }
+
+pub type SliceVec<'a, T> = common::SliceVec<Slice<'a, T>>;
 
 impl Arena {
     pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Self {
@@ -72,8 +80,21 @@ impl Arena {
     }
 }
 
-impl<'a> ArenaToken<'a> {
-    pub fn allocate<T>(&self, count: usize) -> Slice<'a, T> {
+impl Drop for Arena {
+    fn drop(&mut self) {
+        match self.backing {
+            ArenaBacking::MemoryMap => {
+                common::destroy_mapping(self.head, self.cap);
+            }
+            ArenaBacking::SystemAllocation => {
+                common::destroy_mapping_alloc(self.head, self.cap);
+            }
+        }
+    }
+}
+
+impl<'a> AllocHandle for ArenaToken<'a> {
+    fn allocate<T>(&self, count: usize) -> *mut T {
         let layout = Layout::new::<T>();
         let mask = layout.align() - 1;
         let pos = self.inner.pos.get();
@@ -103,10 +124,25 @@ impl<'a> ArenaToken<'a> {
         debug_assert!((ret as usize) >= self.inner.head as usize);
         debug_assert!((ret as usize) < (self.inner.head as usize + self.inner.cap));
 
-        Slice {
-            ptr: ret,
-            len: count,
-            token: self.clone(),
+        ret
+    }
+
+    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T {
+        if ptr.is_null() {
+            return self.allocate(count);
+        }
+
+        let pos = self.inner.pos.get();
+        let next = unsafe { self.inner.head.add(pos) };
+        let end = unsafe { ptr.add(old_count) };
+        if next == end as *mut u8 {
+            self.inner
+                .pos
+                .set(pos + (count - old_count) * mem::size_of::<T>());
+
+            ptr
+        } else {
+            self.allocate(count)
         }
     }
 }
@@ -118,4 +154,160 @@ impl<'a> Drop for ArenaToken<'a> {
     }
 }
 
-// TODO: Drop for Slice
+impl<'a, T> ArenaSlice for Slice<'a, T> {
+    type Item = T;
+    type AllocHandle = ArenaToken<'a>;
+
+    fn get_alloc_handle(&self) -> Self::AllocHandle {
+        self.token.clone()
+    }
+
+    fn ptr(&self) -> *mut Self::Item {
+        self.ptr
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn set_ptr(&mut self, ptr: *mut Self::Item) {
+        self.ptr = ptr;
+    }
+
+    fn set_len(&mut self, len: usize) {
+        self.len = len;
+    }
+
+    /* unsafe fn from_raw(token: Self::AllocHandle, ptr: *mut T, len: usize) -> Self {
+        Slice { ptr, len, token }
+    }
+
+    unsafe fn into_raw(self) -> (Self::AllocHandle, *mut T, usize) {
+        let Self{ ptr, len, .. } = self;
+        let token = mem::transmute_copy(&self.token);
+        mem::forget(self);
+
+        (token, ptr, len)
+    } */
+
+    unsafe fn new_empty(token: Self::AllocHandle, real_len: usize) -> Self {
+        let ptr: *mut T = if real_len == 0 {
+            ptr::NonNull::dangling().as_ptr()
+        } else {
+            token.allocate(real_len)
+        };
+
+        Slice {
+            ptr,
+            len: 0,
+            token,
+        }
+    }
+
+    fn iter<'b>(&'b self) -> SliceIter<'b, T> {
+        unsafe {
+            // no ZST support
+            let ptr = self.ptr;
+            let end = self.ptr.add(self.len);
+
+            SliceIter {
+                ptr,
+                end,
+                _marker: marker::PhantomData,
+            }
+        }
+    }
+
+    fn iter_mut<'b>(&'b mut self) -> SliceIterMut<'b, T> {
+        unsafe {
+            // no ZST support
+            let ptr = self.ptr;
+            let end = self.ptr.add(self.len);
+
+            SliceIterMut {
+                ptr,
+                end,
+                _marker: marker::PhantomData,
+            }
+        }
+    }
+}
+
+impl<'a, T: Clone> Clone for Slice<'a, T> {
+    fn clone(&self) -> Self {
+        let ptr: *mut T = self.token.allocate(self.len);
+
+        for i in 0..self.len {
+            unsafe {
+                ptr::write(ptr.add(i), (*self.ptr.add(i)).clone());
+            }
+        }
+
+        Slice {
+            ptr,
+            len: self.len,
+            token: self.token.clone(),
+        }
+    }
+}
+
+impl<'a, T: fmt::Debug> fmt::Debug for Slice<'a, T> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.deref().fmt(fmt)
+    }
+}
+
+
+impl<'a, T> Deref for Slice<'a, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        unsafe { slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+impl<'a, T> DerefMut for Slice<'a, T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+
+impl<'a, T: Eq> Eq for Slice<'a, T> {}
+
+impl<'a, T: PartialEq> PartialEq for Slice<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref().eq(other.deref())
+    }
+}
+
+impl<'a, T: PartialOrd> PartialOrd for Slice<'a, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        self.deref().partial_cmp(other.deref())
+    }
+}
+
+impl<'a, T> Drop for Slice<'a, T> {
+    fn drop(&mut self) {
+        unsafe {
+            ptr::drop_in_place(&mut self[..]);
+        }
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Slice<'a, T> {
+    type Item = &'a T;
+    type IntoIter = SliceIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Slice<'a, T> {
+    type Item = &'a mut T;
+    type IntoIter = SliceIterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
