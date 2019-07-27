@@ -1,4 +1,6 @@
-use crate::common::{self, AllocHandle, ArenaBacking, ArenaSlice, SliceIter, SliceIterMut};
+use crate::common::{
+    self, AllocHandle, ArenaBacking, ArenaError, ArenaSlice, SliceIter, SliceIterMut,
+};
 
 use std::alloc::Layout;
 use std::cell::Cell;
@@ -8,7 +10,7 @@ use std::fmt;
 use std::marker;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::rc::Rc;
 use std::slice;
 
@@ -38,7 +40,7 @@ pub struct InnerRef {
 #[derive(Debug)]
 struct Inner {
     /// Head of the arena space
-    head: *mut u8,
+    head: NonNull<u8>,
 
     /// Offset into the last region
     pos: Cell<usize>,
@@ -60,19 +62,20 @@ impl Arena {
     /// Create an `Arena` with specified capacity.
     ///
     /// Capacity must be a power of 2. The capacity cannot be grown after the fact.
-    pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Self {
-        let head = match backing {
+    pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Result<Self, ArenaError> {
+        let head = NonNull::new(match backing {
             ArenaBacking::MemoryMap => common::create_mapping(cap),
             ArenaBacking::SystemAllocation => common::create_mapping_alloc(cap),
-        };
+        })
+        .ok_or(ArenaError::AllocationFailed)?;
         let pos = Cell::new(0);
 
-        Arena(
+        Ok(Arena(
             InnerRef {
                 inner: Rc::new(Inner { head, pos, cap }),
             },
             backing,
-        )
+        ))
     }
 
     /// Create another reference to the arena's guts.
@@ -138,21 +141,17 @@ impl AllocHandle for InnerRef {
 
         self.inner.pos.set(pos + additional);
 
-        let ret = unsafe { self.inner.head.add(pos + skip) as *mut T };
+        let ret = unsafe { self.inner.head.as_ptr().add(pos + skip) as *mut T };
 
-        debug_assert!((ret as usize) >= self.inner.head as usize);
-        debug_assert!((ret as usize) < (self.inner.head as usize + self.inner.cap));
+        debug_assert!((ret as usize) >= self.inner.head.as_ptr() as usize);
+        debug_assert!((ret as usize) < (self.inner.head.as_ptr() as usize + self.inner.cap));
 
         ret
     }
 
     fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T {
-        if ptr.is_null() {
-            return self.allocate(count);
-        }
-
         let pos = self.inner.pos.get();
-        let next = unsafe { self.inner.head.add(pos) };
+        let next = unsafe { self.inner.head.as_ptr().add(pos) };
         let end = unsafe { ptr.add(old_count) };
         if next == end as *mut u8 {
             self.inner

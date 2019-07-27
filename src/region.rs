@@ -1,4 +1,6 @@
-use crate::common::{self, AllocHandle, ArenaBacking, ArenaSlice, SliceIter, SliceIterMut};
+use crate::common::{
+    self, AllocHandle, ArenaBacking, ArenaError, ArenaSlice, SliceIter, SliceIterMut,
+};
 
 use std::alloc::Layout;
 use std::cell::Cell;
@@ -7,19 +9,14 @@ use std::fmt;
 use std::marker;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::slice;
-
-#[derive(Debug)]
-pub enum ArenaError {
-    AlreadyLocked,
-}
 
 /// A statically checked arena
 #[derive(Debug)]
 pub struct Arena {
     /// Head of the arena space
-    head: *mut u8,
+    head: NonNull<u8>,
 
     /// Offset into the last region
     pos: Cell<usize>,
@@ -52,23 +49,22 @@ pub struct Slice<'a, T> {
 pub type SliceVec<'a, T> = common::SliceVec<Slice<'a, T>>;
 
 impl Arena {
-    pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Self {
-        let head = match backing {
-            ArenaBacking::MemoryMap =>
-                common::create_mapping(cap),
-            ArenaBacking::SystemAllocation =>
-                common::create_mapping_alloc(cap),
-        };
+    pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Result<Self, ArenaError> {
+        let head = NonNull::new(match backing {
+            ArenaBacking::MemoryMap => common::create_mapping(cap),
+            ArenaBacking::SystemAllocation => common::create_mapping_alloc(cap),
+        })
+        .ok_or(ArenaError::AllocationFailed)?;
         let pos = Cell::new(0);
         let locked = Cell::new(false);
 
-        Arena {
+        Ok(Arena {
             head,
             pos,
             cap,
             backing,
             locked,
-        }
+        })
     }
 
     pub fn generation_token<'a>(&'a self) -> Result<ArenaToken<'a>, ArenaError> {
@@ -76,7 +72,7 @@ impl Arena {
             Err(ArenaError::AlreadyLocked)
         } else {
             self.locked.set(true);
-            Ok(ArenaToken{ inner: self })
+            Ok(ArenaToken { inner: self })
         }
     }
 }
@@ -124,21 +120,17 @@ impl<'a> AllocHandle for ArenaToken<'a> {
         self.inner.pos.set(pos + additional);
         println!("new pos={}", self.inner.pos.get());
 
-        let ret = unsafe { self.inner.head.add(pos + skip) as *mut T };
+        let ret = unsafe { self.inner.head.as_ptr().add(pos + skip) as *mut T };
 
-        debug_assert!((ret as usize) >= self.inner.head as usize);
-        debug_assert!((ret as usize) < (self.inner.head as usize + self.inner.cap));
+        debug_assert!((ret as usize) >= self.inner.head.as_ptr() as usize);
+        debug_assert!((ret as usize) < (self.inner.head.as_ptr() as usize + self.inner.cap));
 
         ret
     }
 
     fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T {
-        if ptr.is_null() {
-            return self.allocate(count);
-        }
-
         let pos = self.inner.pos.get();
-        let next = unsafe { self.inner.head.add(pos) };
+        let next = unsafe { self.inner.head.as_ptr().add(pos) };
         let end = unsafe { ptr.add(old_count) };
         if next == end as *mut u8 {
             self.inner
@@ -213,11 +205,7 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
             token.allocate(real_len)
         };
 
-        Slice {
-            ptr,
-            len: 0,
-            token,
-        }
+        Slice { ptr, len: 0, token }
     }
 
     fn iter<'b>(&'b self) -> SliceIter<'b, T> {
@@ -272,7 +260,6 @@ impl<'a, T: fmt::Debug> fmt::Debug for Slice<'a, T> {
         self.deref().fmt(fmt)
     }
 }
-
 
 impl<'a, T> Deref for Slice<'a, T> {
     type Target = [T];

@@ -42,7 +42,7 @@ prop_compose! {
 const NUM_VECS: usize = 8;
 
 fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>) {
-    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
     let mut vecs = Vec::with_capacity(NUM_VECS);
     let mut slice_vecs = Vec::with_capacity(NUM_VECS);
 

@@ -6,7 +6,7 @@ const DEFAULT_CAPACITY: usize = 4096 << 16;
 #[test]
 fn init_empty() {
     if cfg!(not(miri)) {
-        let arena = Arena::init_capacity(ArenaBacking::MemoryMap, DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity(ArenaBacking::MemoryMap, DEFAULT_CAPACITY).unwrap();
 
         let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
 
@@ -15,7 +15,7 @@ fn init_empty() {
     }
 
     {
-        let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+        let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
         let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
 
@@ -26,7 +26,7 @@ fn init_empty() {
 
 #[test]
 fn init_capacity() {
-    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
     let mut vec = SliceVec::new(arena.inner(), 10);
 
@@ -43,7 +43,7 @@ fn init_capacity() {
 
 #[test]
 fn init_empty_push() {
-    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
     let mut vec = SliceVec::new(arena.inner(), 0);
 
@@ -70,7 +70,7 @@ fn init_empty_push() {
 
 #[test]
 fn reserve_and_resize() {
-    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
     let mut vec = SliceVec::new(arena.inner(), 0);
 

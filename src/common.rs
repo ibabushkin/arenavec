@@ -4,7 +4,13 @@ use std::fmt;
 use std::marker;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::ptr;
+use std::ptr::{self, NonNull};
+
+#[derive(Debug)]
+pub enum ArenaError {
+    AllocationFailed,
+    AlreadyLocked,
+}
 
 #[derive(Debug)]
 pub enum ArenaBacking {
@@ -104,13 +110,9 @@ where
             new_capacity *= 2;
         }
 
-        let ptr: *mut T = handle.allocate_or_extend(
-            new_ptr,
-            self.capacity,
-            new_capacity,
-        );
+        let ptr: *mut T = handle.allocate_or_extend(new_ptr, self.capacity, new_capacity);
 
-        if !ptr.is_null() && ptr != new_ptr {
+        if ptr != new_ptr {
             unsafe {
                 ptr::copy_nonoverlapping(new_ptr, ptr, new_len);
             }
@@ -425,36 +427,28 @@ pub(crate) fn create_mapping_alloc(capacity: usize) -> *mut u8 {
 }
 
 #[cfg(unix)]
-pub(crate) fn destroy_mapping(base: *mut u8, capacity: usize) {
-    let res = unsafe { libc::munmap(base as *mut libc::c_void, capacity) };
+pub(crate) fn destroy_mapping(base: NonNull<u8>, capacity: usize) {
+    let res = unsafe { libc::munmap(base.as_ptr() as *mut libc::c_void, capacity) };
 
     // TODO: Do something on error
     debug_assert_eq!(res, 0);
 }
 
 #[cfg(windows)]
-pub(crate) fn destroy_mapping(base: *mut u8, capacity: usize) {
-    if self.1 {
-        unsafe {
-            let layout =
-                Layout::from_size_align_unchecked(self.0.capacity, common::get_page_size());
-            dealloc(self.inner.head, layout)
-        }
-    } else {
-        use winapi::shared::minwindef::LPVOID;
-        use winapi::um::memoryapi::VirtualFree;
-        use winapi::um::winnt::MEM_RELEASE;
+pub(crate) fn destroy_mapping(base: NonNull<u8>, capacity: usize) {
+    use winapi::shared::minwindef::LPVOID;
+    use winapi::um::memoryapi::VirtualFree;
+    use winapi::um::winnt::MEM_RELEASE;
 
-        let res = unsafe { VirtualFree(self.inner.head as LPVOID, 0, MEM_RELEASE) };
+    let res = unsafe { VirtualFree(base.as_ptr() as LPVOID, 0, MEM_RELEASE) };
 
-        // TODO: Do something on error
-        debug_assert_ne!(res, 0);
-    }
+    // TODO: Do something on error
+    debug_assert_ne!(res, 0);
 }
 
-pub(crate) fn destroy_mapping_alloc(base: *mut u8, capacity: usize) {
+pub(crate) fn destroy_mapping_alloc(base: NonNull<u8>, capacity: usize) {
     unsafe {
         let layout = Layout::from_size_align_unchecked(capacity, get_page_size());
-        dealloc(base, layout);
+        dealloc(base.as_ptr(), layout);
     }
 }

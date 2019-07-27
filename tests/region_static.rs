@@ -52,7 +52,7 @@ prop_compose! {
 const NUM_VECS: usize = 16;
 
 fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>) {
-    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
     let token = arena.generation_token().unwrap();
 
     let mut vecs: Vec<Option<Vec<usize>>> = vec![None; NUM_VECS];
@@ -75,7 +75,10 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                 } else {
                     let mut vec = Vec::new();
                     let mut slice_vec = SliceVec::new(&token, 0);
-                    println!("creating new vec from arena: {:?} ({:?})", arena, &arena as *const Arena);
+                    println!(
+                        "creating new vec from arena: {:?} ({:?})",
+                        arena, &arena as *const Arena
+                    );
 
                     vec.push(e);
                     slice_vec.push(e);
@@ -93,7 +96,10 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                 } else {
                     let mut vec = Vec::new();
                     let mut slice_vec = SliceVec::new(&token, 0);
-                    println!("creating new vec from arena: {:?} ({:?})", arena, &arena as *const Arena);
+                    println!(
+                        "creating new vec from arena: {:?} ({:?})",
+                        arena, &arena as *const Arena
+                    );
 
                     vec.resize(l, e);
                     slice_vec.resize(l, e);
