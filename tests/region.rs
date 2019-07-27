@@ -7,8 +7,9 @@ const DEFAULT_CAPACITY: usize = 4096 << 16;
 fn init_empty() {
     if cfg!(not(miri)) {
         let arena = Arena::init_capacity(ArenaBacking::MemoryMap, DEFAULT_CAPACITY);
+        let token = arena.generation_token().unwrap();
 
-        let vec: SliceVec<usize> = SliceVec::new(arena.generation_token().unwrap(), 0);
+        let vec: SliceVec<usize> = SliceVec::new(&token, 0);
 
         assert_eq!(vec.len(), 0);
         assert_eq!(vec.capacity(), 0);
@@ -16,8 +17,9 @@ fn init_empty() {
 
     {
         let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+        let token = arena.generation_token().unwrap();
 
-        let vec: SliceVec<usize> = SliceVec::new(arena.generation_token().unwrap(), 0);
+        let vec: SliceVec<usize> = SliceVec::new(&token, 0);
 
         assert_eq!(vec.len(), 0);
         assert_eq!(vec.capacity(), 0);
@@ -27,8 +29,9 @@ fn init_empty() {
 #[test]
 fn init_capacity() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+    let token = arena.generation_token().unwrap();
 
-    let mut vec = SliceVec::new(arena.generation_token().unwrap(), 10);
+    let mut vec = SliceVec::new(&token, 10);
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 10);
@@ -44,8 +47,9 @@ fn init_capacity() {
 #[test]
 fn init_empty_push() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+    let token = arena.generation_token().unwrap();
 
-    let mut vec = SliceVec::new(arena.generation_token().unwrap(), 0);
+    let mut vec = SliceVec::new(&token, 0);
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 0);
@@ -71,8 +75,9 @@ fn init_empty_push() {
 #[test]
 fn reserve_and_resize() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY);
+    let token = arena.generation_token().unwrap();
 
-    let mut vec = SliceVec::new(arena.generation_token().unwrap(), 0);
+    let mut vec = SliceVec::new(&token, 0);
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 0);
