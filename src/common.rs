@@ -89,37 +89,6 @@ where
         self.capacity
     }
 
-    pub fn push(&mut self, elem: T) {
-        if self.slice.len() == self.capacity {
-            let new_capacity = if self.capacity == 0 {
-                4
-            } else {
-                self.capacity * 2
-            };
-            let ptr: *mut T = self.slice.get_alloc_handle().allocate_or_extend(
-                self.slice.ptr(),
-                self.capacity,
-                new_capacity,
-            );
-
-            if !self.slice.ptr().is_null() && self.slice.ptr() != ptr {
-                unsafe {
-                    ptr::copy_nonoverlapping(self.slice.ptr(), ptr, self.slice.len());
-                }
-
-                self.slice.set_ptr(ptr);
-            }
-
-            self.capacity = new_capacity;
-        }
-
-        unsafe {
-            ptr::write(self.slice.ptr().add(self.slice.len()), elem);
-        }
-
-        self.slice.set_len(self.slice.len() + 1);
-    }
-
     pub fn reserve(&mut self, size: usize) {
         let mut new_ptr = self.slice.ptr();
         let new_len = self.slice.len();
@@ -152,6 +121,24 @@ where
         self.capacity = new_capacity;
         self.slice.set_ptr(new_ptr);
         self.slice.set_len(new_len);
+    }
+
+    pub fn push(&mut self, elem: T) {
+        if self.slice.len() == self.capacity {
+            let new_capacity = if self.capacity == 0 {
+                4
+            } else {
+                self.capacity * 2
+            };
+
+            self.reserve(new_capacity);
+        }
+
+        unsafe {
+            ptr::write(self.slice.ptr().add(self.slice.len()), elem);
+        }
+
+        self.slice.set_len(self.slice.len() + 1);
     }
 
     pub fn resize(&mut self, len: usize, value: T)

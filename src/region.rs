@@ -39,14 +39,14 @@ pub struct Arena {
 /// The intention is to ensure exclusive allocation access and to tag allocated objects with
 /// the lifetime.
 #[derive(Debug, Clone)]
-pub struct ArenaToken<'a>{
+pub struct ArenaToken<'a> {
     inner: &'a Arena,
 }
 
 pub struct Slice<'a, T> {
     ptr: *mut T,
     len: usize,
-    token: ArenaToken<'a>,
+    token: &'a ArenaToken<'a>,
 }
 
 pub type SliceVec<'a, T> = common::SliceVec<Slice<'a, T>>;
@@ -75,6 +75,7 @@ impl Arena {
         if self.locked.get() {
             Err(ArenaError::AlreadyLocked)
         } else {
+            self.locked.set(true);
             Ok(ArenaToken{ inner: self })
         }
     }
@@ -98,17 +99,20 @@ impl<'a> AllocHandle for ArenaToken<'a> {
         let layout = Layout::new::<T>();
         let mask = layout.align() - 1;
         let pos = self.inner.pos.get();
+        println!("pos={}", pos);
 
         debug_assert!(layout.align() >= (pos & mask));
 
         // let align = Ord::max(layout.align(), 64);
         let mut skip = 64 - (pos & mask);
+        println!("skip={}", skip);
 
         if skip == layout.align() {
             skip = 0;
         }
 
         let additional = skip + layout.size() * count;
+        println!("additional={}", additional);
 
         assert!(
             pos + additional <= self.inner.cap,
@@ -118,6 +122,7 @@ impl<'a> AllocHandle for ArenaToken<'a> {
         );
 
         self.inner.pos.set(pos + additional);
+        println!("new pos={}", self.inner.pos.get());
 
         let ret = unsafe { self.inner.head.add(pos + skip) as *mut T };
 
@@ -147,8 +152,19 @@ impl<'a> AllocHandle for ArenaToken<'a> {
     }
 }
 
+impl<'a> AllocHandle for &'a ArenaToken<'a> {
+    fn allocate<T>(&self, count: usize) -> *mut T {
+        (*self).allocate(count)
+    }
+
+    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T {
+        (*self).allocate_or_extend(ptr, old_count, count)
+    }
+}
+
 impl<'a> Drop for ArenaToken<'a> {
     fn drop(&mut self) {
+        println!("dropping token!");
         self.inner.pos.set(0);
         self.inner.locked.set(false);
     }
@@ -156,10 +172,10 @@ impl<'a> Drop for ArenaToken<'a> {
 
 impl<'a, T> ArenaSlice for Slice<'a, T> {
     type Item = T;
-    type AllocHandle = ArenaToken<'a>;
+    type AllocHandle = &'a ArenaToken<'a>;
 
     fn get_alloc_handle(&self) -> Self::AllocHandle {
-        self.token.clone()
+        self.token
     }
 
     fn ptr(&self) -> *mut Self::Item {
@@ -192,7 +208,7 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
 
     unsafe fn new_empty(token: Self::AllocHandle, real_len: usize) -> Self {
         let ptr: *mut T = if real_len == 0 {
-            ptr::NonNull::dangling().as_ptr()
+            ptr::null_mut()
         } else {
             token.allocate(real_len)
         };
@@ -246,7 +262,7 @@ impl<'a, T: Clone> Clone for Slice<'a, T> {
         Slice {
             ptr,
             len: self.len,
-            token: self.token.clone(),
+            token: self.token,
         }
     }
 }
@@ -288,6 +304,7 @@ impl<'a, T: PartialOrd> PartialOrd for Slice<'a, T> {
 
 impl<'a, T> Drop for Slice<'a, T> {
     fn drop(&mut self) {
+        println!("dropping slice: ptr={:?}, size={}", self.ptr, self.len);
         unsafe {
             ptr::drop_in_place(&mut self[..]);
         }

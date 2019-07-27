@@ -208,7 +208,7 @@ impl<T> ArenaSlice for Slice<T> {
 
     unsafe fn new_empty(inner: Self::AllocHandle, real_len: usize) -> Self {
         let ptr: *mut T = if real_len == 0 {
-            ptr::NonNull::dangling().as_ptr()
+            ptr::null_mut()
         } else {
             inner.allocate(real_len)
         };
