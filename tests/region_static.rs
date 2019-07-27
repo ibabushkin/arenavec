@@ -164,14 +164,14 @@ fn pre_rand_op_seq1() {
     use SliceVecOp::*;
 
     let seq = vec![
-        // (3, Reserve(55)),
-        // (6, Delete),
-        // (6, Delete),
-        // (11, Clone(12)),
+        (3, Reserve(55)),
+        (6, Delete),
+        (6, Delete),
+        (11, Clone(12)),
         (14, Resize(2, 9181993184925740557)),
-        // (5, Clone(7)),
+        (5, Clone(7)),
         (0, Push(15919843562413822883)),
-        /* (2, Delete),
+        (2, Delete),
         (1, Delete),
         (4, Push(9914124670724256873)),
         (6, Delete),
@@ -964,7 +964,7 @@ fn pre_rand_op_seq1() {
         (2, Clone(3)),
         (3, Delete),
         (4, Clone(13)),
-    */];
+    ];
     rand_op_seq_inner(seq, None);
 }
 
