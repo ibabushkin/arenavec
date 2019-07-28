@@ -95,20 +95,17 @@ impl<'a> AllocHandle for ArenaToken<'a> {
         let layout = Layout::new::<T>();
         let mask = layout.align() - 1;
         let pos = self.inner.pos.get();
-        println!("pos={}", pos);
 
         debug_assert!(layout.align() >= (pos & mask));
 
         // let align = Ord::max(layout.align(), 64);
         let mut skip = 64 - (pos & mask);
-        println!("skip={}", skip);
 
         if skip == layout.align() {
             skip = 0;
         }
 
         let additional = skip + layout.size() * count;
-        println!("additional={}", additional);
 
         assert!(
             pos + additional <= self.inner.cap,
@@ -118,7 +115,6 @@ impl<'a> AllocHandle for ArenaToken<'a> {
         );
 
         self.inner.pos.set(pos + additional);
-        println!("new pos={}", self.inner.pos.get());
 
         let ret = unsafe { self.inner.head.as_ptr().add(pos + skip) as *mut T };
 
@@ -156,7 +152,6 @@ impl<'a> AllocHandle for &'a ArenaToken<'a> {
 
 impl<'a> Drop for ArenaToken<'a> {
     fn drop(&mut self) {
-        println!("dropping token!");
         self.inner.pos.set(0);
         self.inner.locked.set(false);
     }
@@ -185,18 +180,6 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
     fn set_len(&mut self, len: usize) {
         self.len = len;
     }
-
-    /* unsafe fn from_raw(token: Self::AllocHandle, ptr: *mut T, len: usize) -> Self {
-        Slice { ptr, len, token }
-    }
-
-    unsafe fn into_raw(self) -> (Self::AllocHandle, *mut T, usize) {
-        let Self{ ptr, len, .. } = self;
-        let token = mem::transmute_copy(&self.token);
-        mem::forget(self);
-
-        (token, ptr, len)
-    } */
 
     unsafe fn new_empty(token: Self::AllocHandle, real_len: usize) -> Self {
         let ptr: NonNull<T> = if real_len == 0 {
@@ -291,7 +274,6 @@ impl<'a, T: PartialOrd> PartialOrd for Slice<'a, T> {
 
 impl<'a, T> Drop for Slice<'a, T> {
     fn drop(&mut self) {
-        println!("dropping slice: ptr={:?}, size={}", self.ptr, self.len);
         unsafe {
             ptr::drop_in_place(&mut self[..]);
         }

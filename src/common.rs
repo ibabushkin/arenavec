@@ -32,8 +32,6 @@ pub trait ArenaSlice {
     fn len(&self) -> usize;
     fn set_ptr(&mut self, ptr: NonNull<Self::Item>);
     fn set_len(&mut self, len: usize);
-    // unsafe fn from_raw(handle: Self::AllocHandle, ptr: *mut Self::Item, len: usize) -> Self;
-    // unsafe fn into_raw(self) -> (Self::AllocHandle, *mut Self::Item, usize);
     unsafe fn new_empty(handle: Self::AllocHandle, real_len: usize) -> Self;
     fn iter<'a>(&'a self) -> SliceIter<'a, Self::Item>;
     fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, Self::Item>;

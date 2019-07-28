@@ -75,10 +75,6 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                 } else {
                     let mut vec = Vec::new();
                     let mut slice_vec = SliceVec::new(&token, 0);
-                    println!(
-                        "creating new vec from arena: {:?} ({:?})",
-                        arena, &arena as *const Arena
-                    );
 
                     vec.push(e);
                     slice_vec.push(e);
@@ -96,10 +92,6 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                 } else {
                     let mut vec = Vec::new();
                     let mut slice_vec = SliceVec::new(&token, 0);
-                    println!(
-                        "creating new vec from arena: {:?} ({:?})",
-                        arena, &arena as *const Arena
-                    );
 
                     vec.resize(l, e);
                     slice_vec.resize(l, e);
@@ -137,7 +129,6 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
 
         for i in 0..NUM_VECS {
             if let (&Some(ref r), &Some(ref r2)) = (&vecs[i], &slice_vecs[i]) {
-                println!("i={}, v={}, op={:?}", i, v, op);
                 assert_eq!(**r, **r2);
             } else if vecs[i].is_some() || slice_vecs[i].is_some() {
                 panic!("missing vec");

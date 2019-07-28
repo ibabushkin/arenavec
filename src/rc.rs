@@ -189,22 +189,6 @@ impl<T> ArenaSlice for Slice<T> {
         self.len = len;
     }
 
-    /* unsafe fn from_raw(inner: Self::AllocHandle, ptr: *mut T, len: usize) -> Self {
-        Slice {
-            ptr,
-            len,
-            _inner: inner,
-        }
-    }
-
-    unsafe fn into_raw(self) -> (Self::AllocHandle, *mut T, usize) {
-        let Self{ ptr, len, .. } = self;
-        let inner = mem::transmute_copy(&self._inner);
-        mem::forget(self);
-
-        (inner, ptr, len)
-    } */
-
     unsafe fn new_empty(inner: Self::AllocHandle, real_len: usize) -> Self {
         let ptr: NonNull<T> = if real_len == 0 {
             NonNull::dangling()
