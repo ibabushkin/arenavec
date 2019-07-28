@@ -1,10 +1,11 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::cmp;
 use std::fmt;
-use std::marker;
-use std::mem;
+// use std::marker;
+// use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr::{self, NonNull};
+use std::slice;
 
 #[derive(Debug)]
 pub enum ArenaError {
@@ -23,7 +24,7 @@ pub trait AllocHandle {
     fn allocate_or_extend<T>(&self, ptr: NonNull<T>, old_count: usize, count: usize) -> NonNull<T>;
 }
 
-pub trait ArenaSlice {
+/* pub trait ArenaSlice {
     type Item;
     type AllocHandle;
 
@@ -35,6 +36,12 @@ pub trait ArenaSlice {
     unsafe fn new_empty(handle: Self::AllocHandle, real_len: usize) -> Self;
     fn iter<'a>(&'a self) -> SliceIter<'a, Self::Item>;
     fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, Self::Item>;
+} */
+
+pub struct Slice<T, H> {
+    ptr: NonNull<T>,
+    len: usize,
+    handle: H,
 }
 
 /// An arena allocated, sequential, resizable vector
@@ -42,49 +49,180 @@ pub trait ArenaSlice {
 /// Since the arena does not support resizing, or freeing memory, this implementation just
 /// creates new slices as necessary and leaks the previous arena allocation, trading memory
 /// for speed.
-pub struct SliceVec<S> {
-    slice: S,
+pub struct SliceVec<T, H> {
+    slice: Slice<T, H>,
     // owo what's this
     capacity: usize,
 }
 
 /// An iterator over a sequence of arena-allocated objects
-#[derive(Debug)]
+/* #[derive(Debug)]
 pub struct SliceIter<'a, T> {
     pub(crate) ptr: *const T,
     pub(crate) end: *const T,
     pub(crate) _marker: marker::PhantomData<&'a T>,
-}
+} */
 
 /// An iterator over a mutable sequence of arena-allocated objects
-#[derive(Debug)]
+/* #[derive(Debug)]
 pub struct SliceIterMut<'a, T> {
     pub(crate) ptr: *mut T,
     pub(crate) end: *mut T,
     pub(crate) _marker: marker::PhantomData<&'a T>,
+} */
+
+impl<T, H: AllocHandle> Slice<T, H> {
+    pub fn new(handle: H, len: usize) -> Self
+    where
+        T: Default,
+    {
+        let mut res = unsafe { Self::new_empty(handle, len) };
+        res.len = len;
+
+        for i in 0..len {
+            unsafe {
+                ptr::write(res.ptr.as_ptr().add(i), T::default());
+            }
+        }
+
+        res
+    }
+
+    unsafe fn new_empty(handle: H, real_len: usize) -> Self {
+        let ptr: NonNull<T> = if real_len == 0 {
+            NonNull::dangling()
+        } else {
+            handle.allocate(real_len)
+        };
+
+        Slice {
+            ptr,
+            len: 0,
+            handle,
+        }
+    }
+
+    /* fn iter<'a>(&'a self) -> slice::SliceIter<'a, T> {
+        unsafe {
+            // no ZST support
+            let ptr = self.ptr.as_ptr();
+            let end = ptr.add(self.len);
+
+            SliceIter {
+                ptr,
+                end,
+                _marker: marker::PhantomData,
+            }
+        }
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> slice::SliceIter<'a, T> {
+        unsafe {
+            // no ZST support
+            let ptr = self.ptr.as_ptr();
+            let end = ptr.add(self.len);
+
+            SliceIterMut {
+                ptr,
+                end,
+                _marker: marker::PhantomData,
+            }
+        }
+    } */
 }
 
-impl<S, T> SliceVec<S>
-where
-    S: ArenaSlice<Item = T>,
-{
-    pub fn iter<'a>(&'a self) -> SliceIter<'a, T> {
+impl<T: Clone, H: AllocHandle + Clone> Clone for Slice<T, H> {
+    fn clone(&self) -> Self {
+        let ptr: NonNull<T> = self.handle.allocate(self.len);
+
+        for i in 0..self.len {
+            unsafe {
+                ptr::write(ptr.as_ptr().add(i), (*self.ptr.as_ptr().add(i)).clone());
+            }
+        }
+
+        Slice {
+            ptr,
+            len: self.len,
+            handle: self.handle.clone(),
+        }
+    }
+}
+
+impl<T: fmt::Debug, H> fmt::Debug for Slice<T, H> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.deref().fmt(fmt)
+    }
+}
+
+impl<T, H> Deref for Slice<T, H> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+    }
+}
+
+impl<T, H> DerefMut for Slice<T, H> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
+    }
+}
+
+impl<T: Eq, H> Eq for Slice<T, H> {}
+
+impl<T: PartialEq, H> PartialEq for Slice<T, H> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref().eq(other.deref())
+    }
+}
+
+impl<T: PartialOrd, H> PartialOrd for Slice<T, H> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        self.deref().partial_cmp(other.deref())
+    }
+}
+
+impl<'a, T, H> IntoIterator for &'a Slice<T, H> {
+    type Item = &'a T;
+    type IntoIter = slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref().iter()
+    }
+}
+
+impl<'a, T, H> IntoIterator for &'a mut Slice<T, H> {
+    type Item = &'a mut T;
+    type IntoIter = slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref_mut().iter_mut()
+    }
+}
+
+impl<T, H> Drop for Slice<T, H> {
+    fn drop(&mut self) {
+        unsafe {
+            ptr::drop_in_place(&mut self[..]);
+        }
+    }
+}
+
+impl<T, H> SliceVec<T, H> {
+    pub fn iter<'a>(&'a self) -> slice::Iter<'a, T> {
         self.slice.iter()
     }
 
-    pub fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, T> {
+    pub fn iter_mut<'a>(&'a mut self) -> slice::IterMut<'a, T> {
         self.slice.iter_mut()
     }
 }
 
-impl<S, T> SliceVec<S>
-where
-    S: ArenaSlice<Item = T>,
-    <S as ArenaSlice>::AllocHandle: AllocHandle,
-{
-    pub fn new(inner: <S as ArenaSlice>::AllocHandle, capacity: usize) -> Self {
+impl<T, H: AllocHandle > SliceVec<T, H> {
+    pub fn new(handle: H, capacity: usize) -> Self {
         SliceVec {
-            slice: unsafe { S::new_empty(inner, capacity) },
+            slice: unsafe { Slice::new_empty(handle, capacity) },
             capacity,
         }
     }
@@ -94,8 +232,7 @@ where
     }
 
     pub fn reserve(&mut self, size: usize) {
-        let ptr = self.slice.ptr();
-        let handle = self.slice.get_alloc_handle();
+        let ptr = self.slice.ptr;
 
         if self.capacity >= size {
             return;
@@ -107,14 +244,14 @@ where
             new_capacity *= 2;
         }
 
-        let new_ptr: NonNull<T> = handle.allocate_or_extend(ptr, self.capacity, new_capacity);
+        let new_ptr: NonNull<T> = self.slice.handle.allocate_or_extend(ptr, self.capacity, new_capacity);
 
         if ptr != new_ptr {
             unsafe {
                 ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), self.slice.len());
             }
 
-            self.slice.set_ptr(new_ptr);
+            self.slice.ptr = new_ptr;
         }
 
         self.capacity = new_capacity;
@@ -132,10 +269,10 @@ where
         }
 
         unsafe {
-            ptr::write(self.slice.ptr().as_ptr().add(self.slice.len()), elem);
+            ptr::write(self.slice.ptr.as_ptr().add(self.slice.len()), elem);
         }
 
-        self.slice.set_len(self.slice.len() + 1);
+        self.slice.len = self.slice.len() + 1;
     }
 
     pub fn resize(&mut self, len: usize, value: T)
@@ -147,123 +284,95 @@ where
         }
 
         for i in self.slice.len()..len.saturating_sub(1) {
-            unsafe { ptr::write(self.slice.ptr().as_ptr().add(i), value.clone()) }
+            unsafe { ptr::write(self.slice.ptr.as_ptr().add(i), value.clone()) }
         }
 
         if len > self.slice.len() {
             unsafe {
-                ptr::write(self.slice.ptr().as_ptr().add(len - 1), value);
+                ptr::write(self.slice.ptr.as_ptr().add(len - 1), value);
             }
         }
 
-        self.slice.set_len(len);
+        self.slice.len = len;
     }
 
     pub fn clear(&mut self) {
-        self.slice.set_len(0);
+        self.slice.len = 0;
     }
 }
 
-impl<S, T> Clone for SliceVec<S>
-where
-    S: ArenaSlice<Item = T>,
-    <S as ArenaSlice>::AllocHandle: AllocHandle,
-    T: Clone,
-{
+impl<T: Clone, H: AllocHandle + Clone> Clone for SliceVec<T, H> {
     fn clone(&self) -> Self {
-        let mut vec: SliceVec<S> = SliceVec::new(self.slice.get_alloc_handle(), self.capacity);
+        let mut vec: SliceVec<T, H> = SliceVec::new(self.slice.handle.clone(), self.capacity);
 
         for i in 0..self.slice.len() {
             unsafe {
                 ptr::write(
-                    vec.slice.ptr().as_ptr().add(i),
-                    (*self.slice.ptr().as_ptr().add(i)).clone(),
+                    vec.slice.ptr.as_ptr().add(i),
+                    (*self.slice.ptr.as_ptr().add(i)).clone(),
                 );
             }
         }
 
-        vec.slice.set_len(self.slice.len());
+        vec.slice.len = self.slice.len();
 
         vec
     }
 }
 
-impl<S: fmt::Debug> fmt::Debug for SliceVec<S> {
+impl<T: fmt::Debug, H> fmt::Debug for SliceVec<T, H> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.slice.fmt(fmt)
     }
 }
 
-impl<S: Deref> Deref for SliceVec<S> {
-    type Target = <S as Deref>::Target;
+impl<T, H> Deref for SliceVec<T, H> {
+    type Target = [T];
 
-    fn deref(&self) -> &<S as Deref>::Target {
+    fn deref(&self) -> &[T] {
         self.slice.deref()
     }
 }
 
-impl<S, T> DerefMut for SliceVec<S>
-where
-    S: DerefMut,
-    S: ArenaSlice<Item = T>,
-{
-    fn deref_mut(&mut self) -> &mut <S as std::ops::Deref>::Target {
+impl<T, H> DerefMut for SliceVec<T, H> {
+    fn deref_mut(&mut self) -> &mut [T] {
         self.slice.deref_mut()
     }
 }
 
-impl<S> Eq for SliceVec<S>
-where
-    S: Deref,
-    <S as Deref>::Target: Eq,
-{
-}
+impl<T: Eq, H> Eq for SliceVec<T, H> { }
 
-impl<S> PartialEq for SliceVec<S>
-where
-    S: Deref,
-    <S as Deref>::Target: PartialEq,
-{
+impl<T: PartialEq, H> PartialEq for SliceVec<T, H> {
     fn eq(&self, other: &Self) -> bool {
         self.deref().eq(other.deref())
     }
 }
 
-impl<S> PartialOrd for SliceVec<S>
-where
-    S: Deref,
-    <S as Deref>::Target: PartialOrd,
-{
+impl<T: PartialOrd, H> PartialOrd for SliceVec<T, H> {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         self.deref().partial_cmp(other.deref())
     }
 }
 
-impl<'a, S, T: 'a> IntoIterator for &'a SliceVec<S>
-where
-    S: ArenaSlice<Item = T>,
-{
+impl<'a, T: 'a, H> IntoIterator for &'a SliceVec<T, H> {
     type Item = &'a T;
-    type IntoIter = SliceIter<'a, T>;
+    type IntoIter = slice::Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl<'a, S, T: 'a> IntoIterator for &'a mut SliceVec<S>
-where
-    S: ArenaSlice<Item = T>,
-{
+impl<'a, T: 'a, H> IntoIterator for &'a mut SliceVec<T, H> {
     type Item = &'a mut T;
-    type IntoIter = SliceIterMut<'a, T>;
+    type IntoIter = slice::IterMut<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
     }
 }
 
-impl<'a, T> Iterator for SliceIter<'a, T> {
+/* impl<'a, T> Iterator for SliceIter<'a, T> {
     type Item = &'a T;
 
     #[inline]
@@ -361,7 +470,7 @@ impl<'a, T> DoubleEndedIterator for SliceIterMut<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for SliceIterMut<'a, T> {}
+impl<'a, T> ExactSizeIterator for SliceIterMut<'a, T> {} */
 
 #[cfg(unix)]
 pub(crate) fn get_page_size() -> usize {

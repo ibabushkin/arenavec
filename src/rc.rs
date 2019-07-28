@@ -1,18 +1,11 @@
-use crate::common::{
-    self, AllocHandle, ArenaBacking, ArenaError, ArenaSlice, SliceIter, SliceIterMut,
-};
+use crate::common::{self, AllocHandle, ArenaBacking, ArenaError};
 
 use std::alloc::Layout;
 use std::cell::Cell;
-use std::cmp;
-use std::fmt;
-// use std::iter::FromIterator;
-use std::marker;
 use std::mem;
-use std::ops::{Deref, DerefMut};
-use std::ptr::{self, NonNull};
+use std::ops::Deref;
+use std::ptr::NonNull;
 use std::rc::Rc;
-use std::slice;
 
 /* #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer}; */
@@ -50,13 +43,9 @@ struct Inner {
 }
 
 /// An arena allocated, fixed-size sequence of objects
-pub struct Slice<T> {
-    ptr: NonNull<T>,
-    len: usize,
-    _inner: InnerRef,
-}
+pub type Slice<T> = common::Slice<T, InnerRef>;
 
-pub type SliceVec<T> = common::SliceVec<Slice<T>>;
+pub type SliceVec<T> = common::SliceVec<T, InnerRef>;
 
 impl Arena {
     /// Create an `Arena` with specified capacity.
@@ -165,151 +154,6 @@ impl AllocHandle for InnerRef {
     }
 }
 
-impl<T> ArenaSlice for Slice<T> {
-    type Item = T;
-    type AllocHandle = InnerRef;
-
-    fn get_alloc_handle(&self) -> Self::AllocHandle {
-        self._inner.clone()
-    }
-
-    fn ptr(&self) -> NonNull<Self::Item> {
-        self.ptr
-    }
-
-    fn len(&self) -> usize {
-        self.len
-    }
-
-    fn set_ptr(&mut self, ptr: NonNull<Self::Item>) {
-        self.ptr = ptr;
-    }
-
-    fn set_len(&mut self, len: usize) {
-        self.len = len;
-    }
-
-    unsafe fn new_empty(inner: Self::AllocHandle, real_len: usize) -> Self {
-        let ptr: NonNull<T> = if real_len == 0 {
-            NonNull::dangling()
-        } else {
-            inner.allocate(real_len)
-        };
-
-        Slice {
-            ptr,
-            len: 0,
-            _inner: inner,
-        }
-    }
-
-    fn iter<'a>(&'a self) -> SliceIter<'a, T> {
-        unsafe {
-            // no ZST support
-            let ptr = self.ptr.as_ptr();
-            let end = ptr.add(self.len);
-
-            SliceIter {
-                ptr,
-                end,
-                _marker: marker::PhantomData,
-            }
-        }
-    }
-
-    fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, T> {
-        unsafe {
-            // no ZST support
-            let ptr = self.ptr.as_ptr();
-            let end = ptr.add(self.len);
-
-            SliceIterMut {
-                ptr,
-                end,
-                _marker: marker::PhantomData,
-            }
-        }
-    }
-}
-
-impl<T> Slice<T> {
-    pub fn new(inner: InnerRef, len: usize) -> Self
-    where
-        T: Default,
-    {
-        let mut res = unsafe { Self::new_empty(inner, len) };
-        res.len = len;
-
-        for i in 0..len {
-            unsafe {
-                ptr::write(res.ptr.as_ptr().add(i), T::default());
-            }
-        }
-
-        res
-    }
-}
-
-impl<T: Clone> Clone for Slice<T> {
-    fn clone(&self) -> Self {
-        let ptr: NonNull<T> = self._inner.allocate(self.len);
-
-        for i in 0..self.len {
-            unsafe {
-                ptr::write(ptr.as_ptr().add(i), (*self.ptr.as_ptr().add(i)).clone());
-            }
-        }
-
-        Slice {
-            ptr,
-            len: self.len,
-            _inner: self._inner.clone(),
-        }
-    }
-}
-
-impl<T: fmt::Debug> fmt::Debug for Slice<T> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.deref().fmt(fmt)
-    }
-}
-
-impl<T> Deref for Slice<T> {
-    type Target = [T];
-
-    fn deref(&self) -> &[T] {
-        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
-    }
-}
-
-impl<T> DerefMut for Slice<T> {
-    fn deref_mut(&mut self) -> &mut [T] {
-        unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
-    }
-}
-
-impl<T: Eq> Eq for Slice<T> {}
-
-impl<T: PartialEq> PartialEq for Slice<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.deref().eq(other.deref())
-    }
-}
-
-impl<T: PartialOrd> PartialOrd for Slice<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        self.deref().partial_cmp(other.deref())
-    }
-}
-
-impl<T> Drop for Slice<T> {
-    fn drop(&mut self) {
-        unsafe {
-            ptr::drop_in_place(&mut self[..]);
-        }
-    }
-}
-
 /* #[cfg(feature = "serde")]
 impl<T> Serialize for Slice<T>
 where
@@ -348,24 +192,6 @@ where
         slice
     }
 } */
-
-impl<'a, T> IntoIterator for &'a Slice<T> {
-    type Item = &'a T;
-    type IntoIter = SliceIter<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<'a, T> IntoIterator for &'a mut Slice<T> {
-    type Item = &'a mut T;
-    type IntoIter = SliceIterMut<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
 
 /*#[cfg(feature = "serde")]
 impl<T> Serialize for SliceVec<T>

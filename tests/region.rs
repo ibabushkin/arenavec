@@ -9,7 +9,7 @@ fn init_empty() {
         let arena = Arena::init_capacity(ArenaBacking::MemoryMap, DEFAULT_CAPACITY).unwrap();
         let token = arena.generation_token().unwrap();
 
-        let vec: SliceVec<usize> = SliceVec::new(&token, 0);
+        let vec: SliceVec<usize> = SliceVec::new(token.weak(), 0);
 
         assert_eq!(vec.len(), 0);
         assert_eq!(vec.capacity(), 0);
@@ -19,7 +19,7 @@ fn init_empty() {
         let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
         let token = arena.generation_token().unwrap();
 
-        let vec: SliceVec<usize> = SliceVec::new(&token, 0);
+        let vec: SliceVec<usize> = SliceVec::new(token.weak(), 0);
 
         assert_eq!(vec.len(), 0);
         assert_eq!(vec.capacity(), 0);
@@ -31,7 +31,7 @@ fn init_capacity() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
     let token = arena.generation_token().unwrap();
 
-    let mut vec = SliceVec::new(&token, 10);
+    let mut vec = SliceVec::new(token.weak(), 10);
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 10);
@@ -49,7 +49,7 @@ fn init_empty_push() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
     let token = arena.generation_token().unwrap();
 
-    let mut vec = SliceVec::new(&token, 0);
+    let mut vec = SliceVec::new(token.weak(), 0);
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 0);
@@ -77,7 +77,7 @@ fn reserve_and_resize() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
     let token = arena.generation_token().unwrap();
 
-    let mut vec = SliceVec::new(&token, 0);
+    let mut vec = SliceVec::new(token.weak(), 0);
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 0);

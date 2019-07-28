@@ -74,7 +74,7 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                     r2.push(e);
                 } else {
                     let mut vec = Vec::new();
-                    let mut slice_vec = SliceVec::new(&token, 0);
+                    let mut slice_vec = SliceVec::new(token.weak(), 0);
 
                     vec.push(e);
                     slice_vec.push(e);
@@ -91,7 +91,7 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                     r2.resize(l, e);
                 } else {
                     let mut vec = Vec::new();
-                    let mut slice_vec = SliceVec::new(&token, 0);
+                    let mut slice_vec = SliceVec::new(token.weak(), 0);
 
                     vec.resize(l, e);
                     slice_vec.resize(l, e);
@@ -108,7 +108,7 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                     r2.reserve(l);
                 } else {
                     let mut vec = Vec::new();
-                    let mut slice_vec = SliceVec::new(&token, 0);
+                    let mut slice_vec = SliceVec::new(token.weak(), 0);
 
                     vec.reserve(l);
                     slice_vec.reserve(l);
