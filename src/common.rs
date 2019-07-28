@@ -1,43 +1,49 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::cmp;
 use std::fmt;
-// use std::marker;
-// use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr::{self, NonNull};
 use std::slice;
 
+/// An error type representing errors possible during arena creation or other arena operations.
 #[derive(Debug)]
 pub enum ArenaError {
+    /// The backing storage for the arena could not be allocated.
     AllocationFailed,
+    /// If an arena is locked by some token type, it refuses locking when already locked.
     AlreadyLocked,
 }
 
+/// The kind of backing requested for an arena.
 #[derive(Debug)]
 pub enum ArenaBacking {
+    /// Create a virtual memory mapping via `mmap()` or `VirtualAlloc()`.
     MemoryMap,
+    /// Ask the system allocator for the memory.
     SystemAllocation,
 }
 
+/// Every arena-allocated object has some form of handle to the arena containing it.
+///
+/// Depending on the type of arena, the actual functionality of the handle can be different,
+/// but it at least allows for allocation and object resizing.
+///
+/// To be useful, handles need to implement `Clone`.
 pub trait AllocHandle {
+    /// Allocate memory from the arena.
+    ///
+    /// Allocate `count` objects of type `T` from the arena, and panic if this is not possible.
     fn allocate<T>(&self, count: usize) -> NonNull<T>;
+    /// Reallocate memory in the arena.
+    ///
+    /// Resize the object sequence pointed to by `ptr` of `old_count` elements of type `T` to
+    /// `count` objects, and copy the sequence if no resizing in place is possible.
+    ///
+    /// `ptr` must point into the arena.
     fn allocate_or_extend<T>(&self, ptr: NonNull<T>, old_count: usize, count: usize) -> NonNull<T>;
 }
 
-/* pub trait ArenaSlice {
-    type Item;
-    type AllocHandle;
-
-    fn get_alloc_handle(&self) -> Self::AllocHandle;
-    fn ptr(&self) -> NonNull<Self::Item>;
-    fn len(&self) -> usize;
-    fn set_ptr(&mut self, ptr: NonNull<Self::Item>);
-    fn set_len(&mut self, len: usize);
-    unsafe fn new_empty(handle: Self::AllocHandle, real_len: usize) -> Self;
-    fn iter<'a>(&'a self) -> SliceIter<'a, Self::Item>;
-    fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, Self::Item>;
-} */
-
+/// An arena allocated, fixed-size sequence of objects.
 pub struct Slice<T, H> {
     ptr: NonNull<T>,
     len: usize,
@@ -55,23 +61,8 @@ pub struct SliceVec<T, H> {
     capacity: usize,
 }
 
-/// An iterator over a sequence of arena-allocated objects
-/* #[derive(Debug)]
-pub struct SliceIter<'a, T> {
-    pub(crate) ptr: *const T,
-    pub(crate) end: *const T,
-    pub(crate) _marker: marker::PhantomData<&'a T>,
-} */
-
-/// An iterator over a mutable sequence of arena-allocated objects
-/* #[derive(Debug)]
-pub struct SliceIterMut<'a, T> {
-    pub(crate) ptr: *mut T,
-    pub(crate) end: *mut T,
-    pub(crate) _marker: marker::PhantomData<&'a T>,
-} */
-
 impl<T, H: AllocHandle> Slice<T, H> {
+    /// Create a new slice of default-initialized objects using the provided handle.
     pub fn new(handle: H, len: usize) -> Self
     where
         T: Default,
@@ -88,6 +79,7 @@ impl<T, H: AllocHandle> Slice<T, H> {
         res
     }
 
+    /// Create a new slice of size `real_len`, but initialize length to `0`.
     unsafe fn new_empty(handle: H, real_len: usize) -> Self {
         let ptr: NonNull<T> = if real_len == 0 {
             NonNull::dangling()
@@ -101,34 +93,6 @@ impl<T, H: AllocHandle> Slice<T, H> {
             handle,
         }
     }
-
-    /* fn iter<'a>(&'a self) -> slice::SliceIter<'a, T> {
-        unsafe {
-            // no ZST support
-            let ptr = self.ptr.as_ptr();
-            let end = ptr.add(self.len);
-
-            SliceIter {
-                ptr,
-                end,
-                _marker: marker::PhantomData,
-            }
-        }
-    }
-
-    fn iter_mut<'a>(&'a mut self) -> slice::SliceIter<'a, T> {
-        unsafe {
-            // no ZST support
-            let ptr = self.ptr.as_ptr();
-            let end = ptr.add(self.len);
-
-            SliceIterMut {
-                ptr,
-                end,
-                _marker: marker::PhantomData,
-            }
-        }
-    } */
 }
 
 impl<T: Clone, H: AllocHandle + Clone> Clone for Slice<T, H> {
@@ -210,16 +174,19 @@ impl<T, H> Drop for Slice<T, H> {
 }
 
 impl<T, H> SliceVec<T, H> {
+    /// Create an immutable iterator over the elements of the vector.
     pub fn iter<'a>(&'a self) -> slice::Iter<'a, T> {
         self.slice.iter()
     }
 
+    /// Create an mutable iterator over the elements of the vector.
     pub fn iter_mut<'a>(&'a mut self) -> slice::IterMut<'a, T> {
         self.slice.iter_mut()
     }
 }
 
 impl<T, H: AllocHandle > SliceVec<T, H> {
+    /// Create a new vector of given capacity using the given handle.
     pub fn new(handle: H, capacity: usize) -> Self {
         SliceVec {
             slice: unsafe { Slice::new_empty(handle, capacity) },
@@ -227,10 +194,12 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         }
     }
 
+    /// Return the current capacity of the vector.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
+    /// Reseve enough space in the vector for at least `size` elements.
     pub fn reserve(&mut self, size: usize) {
         let ptr = self.slice.ptr;
 
@@ -257,6 +226,7 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         self.capacity = new_capacity;
     }
 
+    /// Push an element into the vector.
     pub fn push(&mut self, elem: T) {
         if self.slice.len() == self.capacity {
             let new_capacity = if self.capacity == 0 {
@@ -275,6 +245,7 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         self.slice.len = self.slice.len() + 1;
     }
 
+    /// Resize the vector to hold `len` elements, initialized to `value` if necessary.
     pub fn resize(&mut self, len: usize, value: T)
     where
         T: Clone,
@@ -296,7 +267,9 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         self.slice.len = len;
     }
 
+    /// Clear the vector.
     pub fn clear(&mut self) {
+        // TODO: drop elements
         self.slice.len = 0;
     }
 }
@@ -372,111 +345,13 @@ impl<'a, T: 'a, H> IntoIterator for &'a mut SliceVec<T, H> {
     }
 }
 
-/* impl<'a, T> Iterator for SliceIter<'a, T> {
-    type Item = &'a T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            unsafe {
-                // FIXME:
-                // we do not support ZSTs right now, the stdlib does some dancing
-                // for this which we can safely avoid for now
-                let old = self.ptr;
-                self.ptr = self.ptr.offset(1);
-                Some(&*old)
-            }
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        // let len = unsafe { self.end.offset_from(self.ptr) } as usize;
-        let ptr = self.ptr;
-        let diff = (self.end as usize).wrapping_sub(ptr as usize);
-        let len = diff / mem::size_of::<T>();
-
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for SliceIter<'a, T> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            unsafe {
-                // FIXME:
-                // we do not support ZSTs right now, the stdlib does some dancing
-                // for this which we can safely avoid for now
-                let old = self.end;
-                self.end = self.end.offset(-1);
-                Some(&*old)
-            }
-        }
-    }
-}
-
-impl<'a, T> ExactSizeIterator for SliceIter<'a, T> {}
-
-impl<'a, T> Iterator for SliceIterMut<'a, T> {
-    type Item = &'a mut T;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            unsafe {
-                // FIXME:
-                // we do not support ZSTs right now, the stdlib does some dancing
-                // for this which we can safely avoid for now
-                let old = self.ptr;
-                self.ptr = self.ptr.offset(1);
-                Some(&mut *old)
-            }
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        // let len = unsafe { self.end.offset_from(self.ptr) } as usize;
-        let ptr = self.ptr;
-        let diff = (self.end as usize).wrapping_sub(ptr as usize);
-        let len = diff / mem::size_of::<T>();
-
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> DoubleEndedIterator for SliceIterMut<'a, T> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            unsafe {
-                // FIXME:
-                // we do not support ZSTs right now, the stdlib does some dancing
-                // for this which we can safely avoid for now
-                let old = self.end;
-                self.end = self.end.offset(-1);
-                Some(&mut *old)
-            }
-        }
-    }
-}
-
-impl<'a, T> ExactSizeIterator for SliceIterMut<'a, T> {} */
-
+/// Get the page size of the system we are running on.
 #[cfg(unix)]
 pub(crate) fn get_page_size() -> usize {
     unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
 }
 
+/// Get the page size of the system we are running on.
 #[cfg(windows)]
 pub(crate) fn get_page_size() -> usize {
     use std::mem;
@@ -490,6 +365,7 @@ pub(crate) fn get_page_size() -> usize {
     }
 }
 
+/// Create a virtual memory mapping of size `capacity`.
 #[cfg(unix)]
 pub(crate) fn create_mapping(capacity: usize) -> *mut u8 {
     let ptr = unsafe {
@@ -506,6 +382,7 @@ pub(crate) fn create_mapping(capacity: usize) -> *mut u8 {
     ptr as *mut u8
 }
 
+/// Create a virtual memory mapping of size `capacity`.
 #[cfg(windows)]
 pub(crate) fn create_mapping(capacity: usize) -> *mut u8 {
     use std::ptr;
@@ -529,10 +406,12 @@ pub(crate) fn create_mapping(capacity: usize) -> *mut u8 {
     r as *mut u8
 }
 
+/// Request `capacity` bytes from the system allocator.
 pub(crate) fn create_mapping_alloc(capacity: usize) -> *mut u8 {
     unsafe { alloc(Layout::from_size_align_unchecked(capacity, get_page_size())) }
 }
 
+/// Destroy a virtual memory mapping.
 #[cfg(unix)]
 pub(crate) fn destroy_mapping(base: NonNull<u8>, capacity: usize) {
     let res = unsafe { libc::munmap(base.as_ptr() as *mut libc::c_void, capacity) };
@@ -541,6 +420,7 @@ pub(crate) fn destroy_mapping(base: NonNull<u8>, capacity: usize) {
     debug_assert_eq!(res, 0);
 }
 
+/// Destroy a virtual memory mapping.
 #[cfg(windows)]
 pub(crate) fn destroy_mapping(base: NonNull<u8>, capacity: usize) {
     use winapi::shared::minwindef::LPVOID;
@@ -553,6 +433,7 @@ pub(crate) fn destroy_mapping(base: NonNull<u8>, capacity: usize) {
     debug_assert_ne!(res, 0);
 }
 
+/// Return memory to the system allocator.
 pub(crate) fn destroy_mapping_alloc(base: NonNull<u8>, capacity: usize) {
     unsafe {
         let layout = Layout::from_size_align_unchecked(capacity, get_page_size());

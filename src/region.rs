@@ -5,7 +5,15 @@ use std::cell::Cell;
 use std::mem;
 use std::ptr::NonNull;
 
-/// A statically checked arena
+/// A statically checked arena (non-MT-safe).
+///
+/// Can be stored in a thread-local variable to be accessible everywhere in the owning thread.
+/// This arena has an explicit notion of generations of objects. That is, at every point in time,
+/// all live objects allocated in the arena belong to the same generation, which is tracked using
+/// the lifetime of a token object (which is just a borrow on the arena). Once the token is
+/// dropped, the arena is cleared. Furthermore, all objects allocated in the arena are restricted
+/// to the token lifetime, so the borrow-checker will stop you when your objects can outlive the
+/// generation they are allocated in.
 #[derive(Debug)]
 pub struct Arena {
     /// Head of the arena space
@@ -27,18 +35,33 @@ pub struct Arena {
 /// A proxy for an arena that actually allows allocation.
 ///
 /// The intention is to ensure exclusive allocation access and to tag allocated objects with
-/// the lifetime.
+/// the token lifetime. Only one such object referring to an arena instance is allowed to exist at
+/// any time.
 #[derive(Debug)]
 pub struct ArenaToken<'a> {
     inner: &'a Arena,
 }
 
+/// A handle to the arena for the current generation.
+///
+/// Allows for allocation, but doesn't cause the generation of objects to die when dropped.
 #[derive(Debug, Clone)]
 pub struct ArenaHandle<'a>(&'a ArenaToken<'a>);
 
+/// An arena allocated, fixed-size sequence of objects
+pub type Slice<'a, T> = common::Slice<T, ArenaHandle<'a>>;
+
+/// An arena allocated, sequential, resizable vector
+///
+/// Since the arena does not support resizing, or freeing memory, this implementation just
+/// creates new slices as necessary and leaks the previous arena allocation, trading memory
+/// for speed.
 pub type SliceVec<'a, T> = common::SliceVec<T, ArenaHandle<'a>>;
 
 impl Arena {
+    /// Create an `Arena` with specified capacity.
+    ///
+    /// Capacity must be a power of 2. The capacity cannot be grown after the fact.
     pub fn init_capacity(backing: ArenaBacking, cap: usize) -> Result<Self, ArenaError> {
         let head = NonNull::new(match backing {
             ArenaBacking::MemoryMap => common::create_mapping(cap),
@@ -57,6 +80,9 @@ impl Arena {
         })
     }
 
+    /// Return a fresh generation token for the arena.
+    ///
+    /// If a generation of objects is currently live, an error is returned instead.
     pub fn generation_token<'a>(&'a self) -> Result<ArenaToken<'a>, ArenaError> {
         if self.locked.get() {
             Err(ArenaError::AlreadyLocked)
@@ -81,6 +107,7 @@ impl Drop for Arena {
 }
 
 impl<'a> ArenaToken<'a> {
+    /// Create an arena handle using the current generation's token.
     pub fn weak(&'a self) -> ArenaHandle<'a> {
         ArenaHandle(self)
     }

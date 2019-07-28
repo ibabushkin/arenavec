@@ -10,16 +10,16 @@ use std::rc::Rc;
 /* #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer}; */
 
-/// The owning object of the arena.
+/// A reference-counting arena (non-MT-safe).
 ///
 /// Can be stored in a thread-local variable to be accessible everywhere in the owning thread.
-/// This is the only instance that can be used to allocate and clear the arena. All other
-/// objects referring to the arena merely keep it alive, and are present to avoid arena
-/// clearing while they are live. Also keeps track of how the backing memory has been acquired.
+/// This is the only instance that can be used to clear the arena. All other objects referring to
+/// the arena merely allow for allocation, and are present to avoid arena clearing while they are
+/// live.
 #[derive(Debug)]
 pub struct Arena(InnerRef, ArenaBacking);
 
-/// A non-owning object of the arena.
+/// A non-owning object referring to the arena.
 ///
 /// A reference to the arena that allows its holder to allocate memory from the arena. While
 /// it is live, the arena cannot be cleared (as it is associated with an arena-allocated
@@ -45,6 +45,11 @@ struct Inner {
 /// An arena allocated, fixed-size sequence of objects
 pub type Slice<T> = common::Slice<T, InnerRef>;
 
+/// An arena allocated, sequential, resizable vector
+///
+/// Since the arena does not support resizing, or freeing memory, this implementation just
+/// creates new slices as necessary and leaks the previous arena allocation, trading memory
+/// for speed.
 pub type SliceVec<T> = common::SliceVec<T, InnerRef>;
 
 impl Arena {
@@ -67,7 +72,7 @@ impl Arena {
         ))
     }
 
-    /// Create another reference to the arena's guts.
+    /// Create another reference to the arena.
     pub fn inner(&self) -> InnerRef {
         self.0.clone()
     }
