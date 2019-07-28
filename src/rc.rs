@@ -51,7 +51,7 @@ struct Inner {
 
 /// An arena allocated, fixed-size sequence of objects
 pub struct Slice<T> {
-    ptr: *mut T,
+    ptr: NonNull<T>,
     len: usize,
     _inner: InnerRef,
 }
@@ -116,7 +116,7 @@ impl Drop for Arena {
 }
 
 impl AllocHandle for InnerRef {
-    fn allocate<T>(&self, count: usize) -> *mut T {
+    fn allocate<T>(&self, count: usize) -> NonNull<T> {
         let layout = Layout::new::<T>();
         let mask = layout.align() - 1;
         let pos = self.inner.pos.get();
@@ -143,16 +143,16 @@ impl AllocHandle for InnerRef {
 
         let ret = unsafe { self.inner.head.as_ptr().add(pos + skip) as *mut T };
 
-        debug_assert!((ret as usize) >= self.inner.head.as_ptr() as usize);
-        debug_assert!((ret as usize) < (self.inner.head.as_ptr() as usize + self.inner.cap));
+        assert!((ret as usize) >= self.inner.head.as_ptr() as usize);
+        assert!((ret as usize) < (self.inner.head.as_ptr() as usize + self.inner.cap));
 
-        ret
+        unsafe { NonNull::new_unchecked(ret) }
     }
 
-    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T {
+    fn allocate_or_extend<T>(&self, ptr: NonNull<T>, old_count: usize, count: usize) -> NonNull<T> {
         let pos = self.inner.pos.get();
         let next = unsafe { self.inner.head.as_ptr().add(pos) };
-        let end = unsafe { ptr.add(old_count) };
+        let end = unsafe { ptr.as_ptr().add(old_count) };
         if next == end as *mut u8 {
             self.inner
                 .pos
@@ -173,7 +173,7 @@ impl<T> ArenaSlice for Slice<T> {
         self._inner.clone()
     }
 
-    fn ptr(&self) -> *mut Self::Item {
+    fn ptr(&self) -> NonNull<Self::Item> {
         self.ptr
     }
 
@@ -181,7 +181,7 @@ impl<T> ArenaSlice for Slice<T> {
         self.len
     }
 
-    fn set_ptr(&mut self, ptr: *mut Self::Item) {
+    fn set_ptr(&mut self, ptr: NonNull<Self::Item>) {
         self.ptr = ptr;
     }
 
@@ -206,8 +206,8 @@ impl<T> ArenaSlice for Slice<T> {
     } */
 
     unsafe fn new_empty(inner: Self::AllocHandle, real_len: usize) -> Self {
-        let ptr: *mut T = if real_len == 0 {
-            ptr::null_mut()
+        let ptr: NonNull<T> = if real_len == 0 {
+            NonNull::dangling()
         } else {
             inner.allocate(real_len)
         };
@@ -222,8 +222,8 @@ impl<T> ArenaSlice for Slice<T> {
     fn iter<'a>(&'a self) -> SliceIter<'a, T> {
         unsafe {
             // no ZST support
-            let ptr = self.ptr;
-            let end = self.ptr.add(self.len);
+            let ptr = self.ptr.as_ptr();
+            let end = ptr.add(self.len);
 
             SliceIter {
                 ptr,
@@ -236,8 +236,8 @@ impl<T> ArenaSlice for Slice<T> {
     fn iter_mut<'a>(&'a mut self) -> SliceIterMut<'a, T> {
         unsafe {
             // no ZST support
-            let ptr = self.ptr;
-            let end = self.ptr.add(self.len);
+            let ptr = self.ptr.as_ptr();
+            let end = ptr.add(self.len);
 
             SliceIterMut {
                 ptr,
@@ -258,7 +258,7 @@ impl<T> Slice<T> {
 
         for i in 0..len {
             unsafe {
-                ptr::write(res.ptr.add(i), T::default());
+                ptr::write(res.ptr.as_ptr().add(i), T::default());
             }
         }
 
@@ -268,11 +268,11 @@ impl<T> Slice<T> {
 
 impl<T: Clone> Clone for Slice<T> {
     fn clone(&self) -> Self {
-        let ptr: *mut T = self._inner.allocate(self.len);
+        let ptr: NonNull<T> = self._inner.allocate(self.len);
 
         for i in 0..self.len {
             unsafe {
-                ptr::write(ptr.add(i), (*self.ptr.add(i)).clone());
+                ptr::write(ptr.as_ptr().add(i), (*self.ptr.as_ptr().add(i)).clone());
             }
         }
 
@@ -294,13 +294,13 @@ impl<T> Deref for Slice<T> {
     type Target = [T];
 
     fn deref(&self) -> &[T] {
-        unsafe { slice::from_raw_parts(self.ptr, self.len) }
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 }
 
 impl<T> DerefMut for Slice<T> {
     fn deref_mut(&mut self) -> &mut [T] {
-        unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
     }
 }
 

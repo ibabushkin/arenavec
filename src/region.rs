@@ -41,7 +41,7 @@ pub struct ArenaToken<'a> {
 }
 
 pub struct Slice<'a, T> {
-    ptr: *mut T,
+    ptr: NonNull<T>,
     len: usize,
     token: &'a ArenaToken<'a>,
 }
@@ -91,7 +91,7 @@ impl Drop for Arena {
 }
 
 impl<'a> AllocHandle for ArenaToken<'a> {
-    fn allocate<T>(&self, count: usize) -> *mut T {
+    fn allocate<T>(&self, count: usize) -> NonNull<T> {
         let layout = Layout::new::<T>();
         let mask = layout.align() - 1;
         let pos = self.inner.pos.get();
@@ -122,16 +122,16 @@ impl<'a> AllocHandle for ArenaToken<'a> {
 
         let ret = unsafe { self.inner.head.as_ptr().add(pos + skip) as *mut T };
 
-        debug_assert!((ret as usize) >= self.inner.head.as_ptr() as usize);
-        debug_assert!((ret as usize) < (self.inner.head.as_ptr() as usize + self.inner.cap));
+        assert!((ret as usize) >= self.inner.head.as_ptr() as usize);
+        assert!((ret as usize) < (self.inner.head.as_ptr() as usize + self.inner.cap));
 
-        ret
+        unsafe { NonNull::new_unchecked(ret) }
     }
 
-    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T {
+    fn allocate_or_extend<T>(&self, ptr: NonNull<T>, old_count: usize, count: usize) -> NonNull<T> {
         let pos = self.inner.pos.get();
         let next = unsafe { self.inner.head.as_ptr().add(pos) };
-        let end = unsafe { ptr.add(old_count) };
+        let end = unsafe { ptr.as_ptr().add(old_count) };
         if next == end as *mut u8 {
             self.inner
                 .pos
@@ -145,11 +145,11 @@ impl<'a> AllocHandle for ArenaToken<'a> {
 }
 
 impl<'a> AllocHandle for &'a ArenaToken<'a> {
-    fn allocate<T>(&self, count: usize) -> *mut T {
+    fn allocate<T>(&self, count: usize) -> NonNull<T> {
         (*self).allocate(count)
     }
 
-    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T {
+    fn allocate_or_extend<T>(&self, ptr: NonNull<T>, old_count: usize, count: usize) -> NonNull<T> {
         (*self).allocate_or_extend(ptr, old_count, count)
     }
 }
@@ -170,7 +170,7 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
         self.token
     }
 
-    fn ptr(&self) -> *mut Self::Item {
+    fn ptr(&self) -> NonNull<Self::Item> {
         self.ptr
     }
 
@@ -178,7 +178,7 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
         self.len
     }
 
-    fn set_ptr(&mut self, ptr: *mut Self::Item) {
+    fn set_ptr(&mut self, ptr: NonNull<Self::Item>) {
         self.ptr = ptr;
     }
 
@@ -199,8 +199,8 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
     } */
 
     unsafe fn new_empty(token: Self::AllocHandle, real_len: usize) -> Self {
-        let ptr: *mut T = if real_len == 0 {
-            ptr::null_mut()
+        let ptr: NonNull<T> = if real_len == 0 {
+            NonNull::dangling()
         } else {
             token.allocate(real_len)
         };
@@ -211,8 +211,8 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
     fn iter<'b>(&'b self) -> SliceIter<'b, T> {
         unsafe {
             // no ZST support
-            let ptr = self.ptr;
-            let end = self.ptr.add(self.len);
+            let ptr = self.ptr.as_ptr();
+            let end = ptr.add(self.len);
 
             SliceIter {
                 ptr,
@@ -225,8 +225,8 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
     fn iter_mut<'b>(&'b mut self) -> SliceIterMut<'b, T> {
         unsafe {
             // no ZST support
-            let ptr = self.ptr;
-            let end = self.ptr.add(self.len);
+            let ptr = self.ptr.as_ptr();
+            let end = ptr.add(self.len);
 
             SliceIterMut {
                 ptr,
@@ -239,11 +239,11 @@ impl<'a, T> ArenaSlice for Slice<'a, T> {
 
 impl<'a, T: Clone> Clone for Slice<'a, T> {
     fn clone(&self) -> Self {
-        let ptr: *mut T = self.token.allocate(self.len);
+        let ptr: NonNull<T> = self.token.allocate(self.len);
 
         for i in 0..self.len {
             unsafe {
-                ptr::write(ptr.add(i), (*self.ptr.add(i)).clone());
+                ptr::write(ptr.as_ptr().add(i), (*self.ptr.as_ptr().add(i)).clone());
             }
         }
 
@@ -265,13 +265,13 @@ impl<'a, T> Deref for Slice<'a, T> {
     type Target = [T];
 
     fn deref(&self) -> &[T] {
-        unsafe { slice::from_raw_parts(self.ptr, self.len) }
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 }
 
 impl<'a, T> DerefMut for Slice<'a, T> {
     fn deref_mut(&mut self) -> &mut [T] {
-        unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
     }
 }
 

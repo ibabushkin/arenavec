@@ -19,8 +19,8 @@ pub enum ArenaBacking {
 }
 
 pub trait AllocHandle {
-    fn allocate<T>(&self, count: usize) -> *mut T;
-    fn allocate_or_extend<T>(&self, ptr: *mut T, old_count: usize, count: usize) -> *mut T;
+    fn allocate<T>(&self, count: usize) -> NonNull<T>;
+    fn allocate_or_extend<T>(&self, ptr: NonNull<T>, old_count: usize, count: usize) -> NonNull<T>;
 }
 
 pub trait ArenaSlice {
@@ -28,9 +28,9 @@ pub trait ArenaSlice {
     type AllocHandle;
 
     fn get_alloc_handle(&self) -> Self::AllocHandle;
-    fn ptr(&self) -> *mut Self::Item;
+    fn ptr(&self) -> NonNull<Self::Item>;
     fn len(&self) -> usize;
-    fn set_ptr(&mut self, ptr: *mut Self::Item);
+    fn set_ptr(&mut self, ptr: NonNull<Self::Item>);
     fn set_len(&mut self, len: usize);
     // unsafe fn from_raw(handle: Self::AllocHandle, ptr: *mut Self::Item, len: usize) -> Self;
     // unsafe fn into_raw(self) -> (Self::AllocHandle, *mut Self::Item, usize);
@@ -96,8 +96,7 @@ where
     }
 
     pub fn reserve(&mut self, size: usize) {
-        let mut new_ptr = self.slice.ptr();
-        let new_len = self.slice.len();
+        let ptr = self.slice.ptr();
         let handle = self.slice.get_alloc_handle();
 
         if self.capacity >= size {
@@ -110,19 +109,17 @@ where
             new_capacity *= 2;
         }
 
-        let ptr: *mut T = handle.allocate_or_extend(new_ptr, self.capacity, new_capacity);
+        let new_ptr: NonNull<T> = handle.allocate_or_extend(ptr, self.capacity, new_capacity);
 
         if ptr != new_ptr {
             unsafe {
-                ptr::copy_nonoverlapping(new_ptr, ptr, new_len);
+                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr.as_ptr(), self.slice.len());
             }
 
-            new_ptr = ptr;
+            self.slice.set_ptr(new_ptr);
         }
 
         self.capacity = new_capacity;
-        self.slice.set_ptr(new_ptr);
-        self.slice.set_len(new_len);
     }
 
     pub fn push(&mut self, elem: T) {
@@ -137,7 +134,7 @@ where
         }
 
         unsafe {
-            ptr::write(self.slice.ptr().add(self.slice.len()), elem);
+            ptr::write(self.slice.ptr().as_ptr().add(self.slice.len()), elem);
         }
 
         self.slice.set_len(self.slice.len() + 1);
@@ -152,12 +149,12 @@ where
         }
 
         for i in self.slice.len()..len.saturating_sub(1) {
-            unsafe { ptr::write(self.slice.ptr().add(i), value.clone()) }
+            unsafe { ptr::write(self.slice.ptr().as_ptr().add(i), value.clone()) }
         }
 
         if len > self.slice.len() {
             unsafe {
-                ptr::write(self.slice.ptr().add(len - 1), value);
+                ptr::write(self.slice.ptr().as_ptr().add(len - 1), value);
             }
         }
 
@@ -180,7 +177,10 @@ where
 
         for i in 0..self.slice.len() {
             unsafe {
-                ptr::write(vec.slice.ptr().add(i), (*self.slice.ptr().add(i)).clone());
+                ptr::write(
+                    vec.slice.ptr().as_ptr().add(i),
+                    (*self.slice.ptr().as_ptr().add(i)).clone(),
+                );
             }
         }
 
