@@ -1,8 +1,6 @@
 use crate::common::{self, AllocHandle, ArenaBacking, ArenaError};
 
-use std::alloc::Layout;
 use std::cell::Cell;
-use std::mem;
 use std::ops::Deref;
 use std::ptr::NonNull;
 use std::rc::Rc;
@@ -111,51 +109,17 @@ impl Drop for Arena {
 
 impl AllocHandle for InnerRef {
     fn allocate<T>(&self, count: usize) -> NonNull<T> {
-        let layout = Layout::new::<T>();
-        let mask = layout.align() - 1;
-        let pos = self.inner.pos.get();
-
-        debug_assert!(layout.align() >= (pos & mask));
-
-        // let align = Ord::max(layout.align(), 64);
-        let mut skip = 64 - (pos & mask);
-
-        if skip == layout.align() {
-            skip = 0;
-        }
-
-        let additional = skip + layout.size() * count;
-
-        assert!(
-            pos + additional <= self.inner.cap,
-            "arena overflow: {} > {}",
-            pos + additional,
-            self.inner.cap
-        );
-
-        self.inner.pos.set(pos + additional);
-
-        let ret = unsafe { self.inner.head.as_ptr().add(pos + skip) as *mut T };
-
-        assert!((ret as usize) >= self.inner.head.as_ptr() as usize);
-        assert!((ret as usize) < (self.inner.head.as_ptr() as usize + self.inner.cap));
-
-        unsafe { NonNull::new_unchecked(ret) }
+        common::allocate_inner(self.inner.head, &self.inner.pos, self.inner.cap, count)
     }
 
     fn allocate_or_extend<T>(&self, ptr: NonNull<T>, old_count: usize, count: usize) -> NonNull<T> {
-        let pos = self.inner.pos.get();
-        let next = unsafe { self.inner.head.as_ptr().add(pos) };
-        let end = unsafe { ptr.as_ptr().add(old_count) };
-        if next == end as *mut u8 {
-            self.inner
-                .pos
-                .set(pos + (count - old_count) * mem::size_of::<T>());
-
-            ptr
-        } else {
-            self.allocate(count)
-        }
+        common::allocate_or_extend_inner(
+            self.inner.head,
+            &self.inner.pos,
+            self.inner.cap,
+            ptr,
+            old_count,
+            count)
     }
 }
 

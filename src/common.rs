@@ -1,6 +1,8 @@
 use std::alloc::{alloc, dealloc, Layout};
+use std::cell::Cell;
 use std::cmp;
 use std::fmt;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr::{self, NonNull};
 use std::slice;
@@ -447,5 +449,63 @@ pub(crate) fn destroy_mapping_alloc(base: NonNull<u8>, capacity: usize) {
     unsafe {
         let layout = Layout::from_size_align_unchecked(capacity, get_page_size());
         dealloc(base.as_ptr(), layout);
+    }
+}
+
+pub(crate) fn allocate_inner<T>(
+    head: NonNull<u8>,
+    position: &Cell<usize>,
+    cap: usize,
+    count: usize) -> NonNull<T>
+{
+    let layout = Layout::new::<T>();
+    let mask = layout.align() - 1;
+    let pos = position.get();
+
+    debug_assert!(layout.align() >= (pos & mask));
+
+    // let align = Ord::max(layout.align(), 64);
+    let mut skip = 64 - (pos & mask);
+
+    if skip == layout.align() {
+        skip = 0;
+    }
+
+    let additional = skip + layout.size() * count;
+
+    assert!(
+        pos + additional <= cap,
+        "arena overflow: {} > {}",
+        pos + additional,
+        cap
+    );
+
+    position.set(pos + additional);
+
+    let ret = unsafe { head.as_ptr().add(pos + skip) as *mut T };
+
+    assert!((ret as usize) >= head.as_ptr() as usize);
+    assert!((ret as usize) < (head.as_ptr() as usize + cap));
+
+    unsafe { NonNull::new_unchecked(ret) }
+}
+
+pub(crate) fn allocate_or_extend_inner<T>(
+    head: NonNull<u8>,
+    position: &Cell<usize>,
+    cap: usize,
+    ptr: NonNull<T>,
+    old_count: usize,
+    count: usize) -> NonNull<T>
+{
+    let pos = position.get();
+    let next = unsafe { head.as_ptr().add(pos) };
+    let end = unsafe { ptr.as_ptr().add(old_count) };
+    if next == end as *mut u8 {
+        position.set(pos + (count - old_count) * mem::size_of::<T>());
+
+        ptr
+    } else {
+        allocate_inner(head, position, cap, count)
     }
 }
