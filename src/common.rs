@@ -250,17 +250,23 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
     where
         T: Clone,
     {
+        let old_len = self.slice.len;
+
         if self.capacity < len {
             self.reserve(len);
         }
 
-        for i in self.slice.len()..len.saturating_sub(1) {
+        for i in old_len..len.saturating_sub(1) {
             unsafe { ptr::write(self.slice.ptr.as_ptr().add(i), value.clone()) }
         }
 
-        if len > self.slice.len() {
+        if len > old_len {
             unsafe {
                 ptr::write(self.slice.ptr.as_ptr().add(len - 1), value);
+            }
+        } else if len < old_len {
+            unsafe {
+                ptr::drop_in_place(&mut self.slice[len..old_len]);
             }
         }
 
@@ -269,7 +275,10 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
 
     /// Clear the vector.
     pub fn clear(&mut self) {
-        // TODO: drop elements
+        unsafe {
+            ptr::drop_in_place(&mut self.slice[..]);
+        }
+
         self.slice.len = 0;
     }
 }
