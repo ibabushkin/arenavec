@@ -7,6 +7,9 @@ use std::ops::{Deref, DerefMut};
 use std::ptr::{self, NonNull};
 use std::slice;
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Serializer};
+
 /// An error type representing errors possible during arena creation or other arena operations.
 #[derive(Debug)]
 pub enum ArenaError {
@@ -166,6 +169,45 @@ impl<'a, T, H> IntoIterator for &'a mut Slice<T, H> {
         self.deref_mut().iter_mut()
     }
 }
+
+#[cfg(feature = "serde")]
+impl<T, H> Serialize for Slice<T, H>
+where
+    T: Serialize,
+{
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(self.iter())
+    }
+}
+
+/* #[cfg(feature = "serde")]
+impl<'de, T, H> Deserialize<'de> for Slice<T, H>
+where
+    T: Deserialize<'de>,
+{
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut res: Vec<T> = Deserialize::deserialize(deserializer)?;
+        let mut slice = Slice::new(res.len());
+
+        unsafe {
+            let ptr = res.as_mut_ptr();
+            ptr::copy_nonoverlapping(slice.ptr, ptr, slice.len);
+            dealloc(ptr);
+        }
+
+        mem::forget(res);
+
+        slice
+    }
+} */
 
 impl<T, H> Drop for Slice<T, H> {
     fn drop(&mut self) {
@@ -353,6 +395,39 @@ impl<'a, T: 'a, H> IntoIterator for &'a mut SliceVec<T, H> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
+    }
+}
+
+/* impl<T, H> FromIterator<T> for SliceVec<T, H> {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item=T>
+    {
+        let iter = iter.into_iter();
+        let (min, max) = iter.size_hint();
+        let cap = if let Some(m) = max { m } else { min };
+
+        let mut res = SliceVec::new(cap);
+
+        for e in iter {
+            res.push(e);
+        }
+
+        res
+    }
+} */
+
+#[cfg(feature = "serde")]
+impl<T, H> Serialize for SliceVec<T, H>
+where
+    T: Serialize,
+{
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.slice.serialize(serializer)
     }
 }
 

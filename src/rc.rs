@@ -5,9 +5,6 @@ use std::ops::Deref;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-/* #[cfg(feature = "serde")]
-use serde::{Deserialize, Deserializer, Serialize, Serializer}; */
-
 /// A reference-counting arena (non-MT-safe).
 ///
 /// Can be stored in a thread-local variable to be accessible everywhere in the owning thread.
@@ -122,75 +119,3 @@ impl AllocHandle for InnerRef {
             count)
     }
 }
-
-/* #[cfg(feature = "serde")]
-impl<T> Serialize for Slice<T>
-where
-    T: Serialize,
-{
-    #[inline]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(self.iter())
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de, T> Deserialize<'de> for Slice<T>
-where
-    T: Deserialize<'de>,
-{
-    #[inline]
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut res: Vec<T> = Deserialize::deserialize(deserializer)?;
-        let mut slice = Slice::new(res.len());
-
-        unsafe {
-            let ptr = res.as_mut_ptr();
-            ptr::copy_nonoverlapping(slice.ptr, ptr, slice.len);
-            dealloc(ptr);
-        }
-
-        mem::forget(res);
-
-        slice
-    }
-} */
-
-/*#[cfg(feature = "serde")]
-impl<T> Serialize for SliceVec<T>
-where
-    T: Serialize,
-{
-    #[inline]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.slice.serialize(serializer)
-    }
-}
-
-impl<T> FromIterator<T> for SliceVec<T> {
-    fn from_iter<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item=T>
-    {
-        let iter = iter.into_iter();
-        let (min, max) = iter.size_hint();
-        let cap = if let Some(m) = max { m } else { min };
-
-        let mut res = SliceVec::new(cap);
-
-        for e in iter {
-            res.push(e);
-        }
-
-        res
-    }
-}*/
