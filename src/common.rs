@@ -249,8 +249,6 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
     }
 
     /// Reseve enough space in the vector for at least `size` additional elements.
-    ///
-    /// TODO: refactor to have semantics as std::vec::Vec
     pub fn reserve(&mut self, additional: usize) {
         let ptr = self.slice.ptr;
         let size = self.slice.len + additional;
@@ -298,7 +296,7 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
 
     /// Push an element into the vector.
     pub fn push(&mut self, elem: T) {
-        if self.slice.len() == self.capacity {
+        if self.slice.len == self.capacity {
             let new_capacity = if self.capacity == 0 {
                 4
             } else {
@@ -315,7 +313,17 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         self.slice.len = self.slice.len() + 1;
     }
 
-    // TODO: pop
+    /// Remove the last element from the vector and return it, or `None` if the vector is empty.
+    pub fn pop(&mut self) -> Option<T> {
+        if self.is_empty() {
+            return None;
+        }
+
+        unsafe {
+            self.slice.len -= 1;
+            Some(ptr::read(self.slice.ptr.as_ptr().add(self.slice.len)))
+        }
+    }
 
     // TODO: append
 
