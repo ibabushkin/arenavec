@@ -295,7 +295,19 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         }
     }
 
-    // TODO: swap_remove
+    /// Remove an element from the vector and return it.
+    ///
+    /// The removed element is replaced by the last element of the vector.
+    /// This does not preserve ordering, but is O(1).
+    pub fn swap_remove(&mut self, index: usize) -> T {
+        let hole: *mut T = &mut self[index];
+        self.slice.len -= 1;
+
+        unsafe {
+            let last = ptr::read(self.slice.ptr.as_ptr().add(self.slice.len));
+            ptr::replace(hole, last)
+        }
+    }
 
     // TODO: insert
 
