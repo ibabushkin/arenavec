@@ -2,3 +2,5 @@
 * [ ] pop
 * [ ] append
 * [ ] truncate (drops)
+* [ ] swap_remove
+* [ ] resize_with

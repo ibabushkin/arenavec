@@ -389,7 +389,33 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
 
     // TODO: split_off
 
-    // TODO: resize_with
+    /// Resize the vector to hold `len` elements, initialized to the return value of `f` if necessary.
+    pub fn resize_with<F>(&mut self, len: usize, mut f: F)
+    where
+        F: FnMut() -> T,
+    {
+        let old_len = self.slice.len;
+
+        if self.capacity < len {
+            self.reserve(len - old_len);
+        }
+
+        for i in old_len..len.saturating_sub(1) {
+            unsafe { ptr::write(self.slice.ptr.as_ptr().add(i), f()) }
+        }
+
+        if len > old_len {
+            unsafe {
+                ptr::write(self.slice.ptr.as_ptr().add(len - 1), f());
+            }
+        } else if len < old_len {
+            unsafe {
+                ptr::drop_in_place(&mut self.slice[len..old_len]);
+            }
+        }
+
+        self.slice.len = len;
+    }
 
     /// Resize the vector to hold `len` elements, initialized to `value` if necessary.
     pub fn resize(&mut self, len: usize, value: T)
