@@ -101,3 +101,23 @@ fn reserve_and_resize() {
         assert_eq!(vec[i], 1);
     }
 }
+
+#[test]
+fn drop() {
+    use std::rc::Rc;
+
+    let rc = Rc::new(());
+    let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
+
+    {
+        let mut vec = SliceVec::new(arena.inner(), 15);
+
+        for _ in 0..20 {
+            vec.push(rc.clone());
+        }
+
+        vec.resize(10, Rc::new(()));
+    }
+
+    assert_eq!(Rc::strong_count(&rc), 1);
+}
