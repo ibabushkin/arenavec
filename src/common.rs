@@ -394,7 +394,8 @@ impl<T, H: AllocHandle> SliceVec<T, H> {
     ///
     /// The capacity of `self` remains unchanged.
     pub fn split_off(&mut self, at: usize) -> Self
-        where H: Clone,
+    where
+        H: Clone,
     {
         let mut ret = Self::with_capacity(self.slice.handle.clone(), self.slice.len - at);
         ret.slice.len = self.slice.len - at;
@@ -465,7 +466,15 @@ impl<T, H: AllocHandle> SliceVec<T, H> {
         self.slice.len = len;
     }
 
-    // TODO: extend from slice
+    /// Clone and append all elements in a slice to the vector.
+    pub fn extend_from_slice(&mut self, other: &[T])
+        where
+            T: Clone
+    {
+        for e in other {
+            self.push(e.clone());
+        }
+    }
 
     // TODO: dedup
 
