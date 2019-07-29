@@ -280,7 +280,20 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
 
     // TODO: shrink_to
 
-    // TODO: truncate
+    /// Shorten the vector, keeping the first `len` elements and dropping the rest.
+    ///
+    /// If `len` is greater than the vector's current length, this has no effect.
+    pub fn truncate(&mut self, len: usize) {
+        let old_len = self.slice.len;
+
+        if len < old_len {
+            unsafe {
+                ptr::drop_in_place(&mut self.slice[len..old_len]);
+            }
+
+            self.slice.len = len;
+        }
+    }
 
     // TODO: swap_remove
 
