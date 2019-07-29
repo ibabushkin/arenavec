@@ -230,8 +230,13 @@ impl<T, H> SliceVec<T, H> {
 }
 
 impl<T, H: AllocHandle > SliceVec<T, H> {
+    /// Create a new empty vector of capacity `0` using the given handle.
+    pub fn new(handle: H) -> Self {
+        Self::with_capacity(handle, 0)
+    }
+
     /// Create a new vector of given capacity using the given handle.
-    pub fn new(handle: H, capacity: usize) -> Self {
+    pub fn with_capacity(handle: H, capacity: usize) -> Self {
         SliceVec {
             slice: unsafe { Slice::new_empty(handle, capacity) },
             capacity,
@@ -244,6 +249,8 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
     }
 
     /// Reseve enough space in the vector for at least `size` elements.
+    ///
+    /// TODO: refactor to have semantics as std::vec::Vec
     pub fn reserve(&mut self, size: usize) {
         let ptr = self.slice.ptr;
 
@@ -270,6 +277,24 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         self.capacity = new_capacity;
     }
 
+    // TODO: shrink_to_fit
+
+    // TODO: shrink_to
+
+    // TODO: truncate
+
+    // TODO: swap_remove
+
+    // TODO: insert
+
+    // TODO: remove
+
+    // TODO: retain
+
+    // TODO: dedup_by_key
+
+    // TODO: dedup_by
+
     /// Push an element into the vector.
     pub fn push(&mut self, elem: T) {
         if self.slice.len() == self.capacity {
@@ -288,6 +313,35 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
 
         self.slice.len = self.slice.len() + 1;
     }
+
+    // TODO: pop
+
+    // TODO: append
+
+    // TODO: drain
+
+    /// Clear the vector.
+    pub fn clear(&mut self) {
+        unsafe {
+            ptr::drop_in_place(&mut self.slice[..]);
+        }
+
+        self.slice.len = 0;
+    }
+
+    /// Return the number of elements in the vector.
+    pub fn len(&self) -> usize {
+        self.slice.len
+    }
+
+    /// Return `true` if the vector contains no elements.
+    pub fn is_empty(&self) -> bool {
+        self.slice.len == 0
+    }
+
+    // TODO: split_off
+
+    // TODO: resize_with
 
     /// Resize the vector to hold `len` elements, initialized to `value` if necessary.
     pub fn resize(&mut self, len: usize, value: T)
@@ -317,19 +371,21 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         self.slice.len = len;
     }
 
-    /// Clear the vector.
-    pub fn clear(&mut self) {
-        unsafe {
-            ptr::drop_in_place(&mut self.slice[..]);
-        }
+    // TODO: extend from slice
 
-        self.slice.len = 0;
-    }
+    // TODO: dedup
+
+    // TODO: remove_item
+
+    // TODO: splice
+
+    // TODO: drain_filter
 }
 
 impl<T: Clone, H: AllocHandle + Clone> Clone for SliceVec<T, H> {
     fn clone(&self) -> Self {
-        let mut vec: SliceVec<T, H> = SliceVec::new(self.slice.handle.clone(), self.capacity);
+        let mut vec: SliceVec<T, H> =
+            SliceVec::with_capacity(self.slice.handle.clone(), self.capacity);
 
         for i in 0..self.slice.len() {
             unsafe {

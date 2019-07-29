@@ -51,7 +51,7 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
     }
 
     for _ in 0..NUM_VECS {
-        slice_vecs.push(SliceVec::new(arena.inner(), 0));
+        slice_vecs.push(SliceVec::new(arena.inner()));
     }
 
     for (v, op) in seq.drain(..) {

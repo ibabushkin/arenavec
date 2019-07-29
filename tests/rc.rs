@@ -8,7 +8,7 @@ fn init_empty() {
     if cfg!(not(miri)) {
         let arena = Arena::init_capacity(ArenaBacking::MemoryMap, DEFAULT_CAPACITY).unwrap();
 
-        let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
+        let vec: SliceVec<usize> = SliceVec::new(arena.inner());
 
         assert_eq!(vec.len(), 0);
         assert_eq!(vec.capacity(), 0);
@@ -17,7 +17,7 @@ fn init_empty() {
     {
         let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
-        let vec: SliceVec<usize> = SliceVec::new(arena.inner(), 0);
+        let vec: SliceVec<usize> = SliceVec::new(arena.inner());
 
         assert_eq!(vec.len(), 0);
         assert_eq!(vec.capacity(), 0);
@@ -28,7 +28,7 @@ fn init_empty() {
 fn init_capacity() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
-    let mut vec = SliceVec::new(arena.inner(), 10);
+    let mut vec = SliceVec::with_capacity(arena.inner(), 10);
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 10);
@@ -45,7 +45,7 @@ fn init_capacity() {
 fn init_empty_push() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
-    let mut vec = SliceVec::new(arena.inner(), 0);
+    let mut vec = SliceVec::new(arena.inner());
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 0);
@@ -72,7 +72,7 @@ fn init_empty_push() {
 fn reserve_and_resize() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
-    let mut vec = SliceVec::new(arena.inner(), 0);
+    let mut vec = SliceVec::new(arena.inner());
 
     assert_eq!(vec.len(), 0);
     assert_eq!(vec.capacity(), 0);
@@ -110,7 +110,7 @@ fn drop() {
     let arena = Arena::init_capacity(ArenaBacking::SystemAllocation, DEFAULT_CAPACITY).unwrap();
 
     {
-        let mut vec = SliceVec::new(arena.inner(), 15);
+        let mut vec = SliceVec::with_capacity(arena.inner(), 15);
 
         for _ in 0..20 {
             vec.push(rc.clone());

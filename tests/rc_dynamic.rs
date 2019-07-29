@@ -72,7 +72,7 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                     r2.push(e);
                 } else {
                     let mut vec = Vec::new();
-                    let mut slice_vec = SliceVec::new(arena.inner(), 0);
+                    let mut slice_vec = SliceVec::new(arena.inner());
 
                     vec.push(e);
                     slice_vec.push(e);
@@ -89,7 +89,7 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                     r2.resize(l, e);
                 } else {
                     let mut vec = Vec::new();
-                    let mut slice_vec = SliceVec::new(arena.inner(), 0);
+                    let mut slice_vec = SliceVec::new(arena.inner());
 
                     vec.resize(l, e);
                     slice_vec.resize(l, e);
@@ -106,7 +106,7 @@ fn rand_op_seq_inner(mut seq: Vec<(usize, SliceVecOp)>, filter: Option<&[usize]>
                     r2.reserve(l);
                 } else {
                     let mut vec = Vec::new();
-                    let mut slice_vec = SliceVec::new(arena.inner(), 0);
+                    let mut slice_vec = SliceVec::new(arena.inner());
 
                     vec.reserve(l);
                     slice_vec.reserve(l);
