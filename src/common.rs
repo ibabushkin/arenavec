@@ -229,7 +229,7 @@ impl<T, H> SliceVec<T, H> {
     }
 }
 
-impl<T, H: AllocHandle > SliceVec<T, H> {
+impl<T, H: AllocHandle> SliceVec<T, H> {
     /// Create a new empty vector of capacity `0` using the given handle.
     pub fn new(handle: H) -> Self {
         Self::with_capacity(handle, 0)
@@ -387,7 +387,27 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         self.slice.len == 0
     }
 
-    // TODO: split_off
+    /// Splits the vector into two at the given index.
+    ///
+    /// Retruns a newly allocated `Self`. `self` contains elements `[0, at)`, and the returned
+    /// `Self` contains elements `[at, len)`.
+    ///
+    /// The capacity of `self` remains unchanged.
+    pub fn split_off(&mut self, at: usize) -> Self
+        where H: Clone,
+    {
+        let mut ret = Self::with_capacity(self.slice.handle.clone(), self.slice.len - at);
+        ret.slice.len = self.slice.len - at;
+
+        unsafe {
+            ptr::copy_nonoverlapping(
+                self.slice.ptr.as_ptr().add(at),
+                ret.slice.ptr.as_ptr(),
+                ret.len());
+        }
+
+        ret
+    }
 
     /// Resize the vector to hold `len` elements, initialized to the return value of `f` if necessary.
     pub fn resize_with<F>(&mut self, len: usize, mut f: F)
