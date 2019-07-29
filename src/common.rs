@@ -325,7 +325,21 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         }
     }
 
-    // TODO: append
+    /// Move all elements of `other` into `self`, leaving `other` empty.
+    pub fn append(&mut self, other: &mut Self) {
+        let count = other.len();
+        self.reserve(count);
+        let len = self.len();
+
+        unsafe {
+            ptr::copy_nonoverlapping(
+                other.slice.ptr.as_ptr(),
+                self.slice.ptr.as_ptr().add(len),
+                count);
+        }
+
+        other.slice.len = 0;
+    }
 
     // TODO: drain
 
