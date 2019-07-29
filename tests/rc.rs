@@ -84,7 +84,7 @@ fn reserve_and_resize() {
     assert_eq!(vec.len(), 5);
     assert_eq!(vec.capacity(), 8);
 
-    vec.reserve(6);
+    vec.reserve(2);
 
     assert_eq!(vec.capacity(), 8);
 

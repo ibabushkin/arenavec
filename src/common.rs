@@ -248,11 +248,12 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         self.capacity
     }
 
-    /// Reseve enough space in the vector for at least `size` elements.
+    /// Reseve enough space in the vector for at least `size` additional elements.
     ///
     /// TODO: refactor to have semantics as std::vec::Vec
-    pub fn reserve(&mut self, size: usize) {
+    pub fn reserve(&mut self, additional: usize) {
         let ptr = self.slice.ptr;
+        let size = self.slice.len + additional;
 
         if self.capacity >= size {
             return;
@@ -304,7 +305,7 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
                 self.capacity * 2
             };
 
-            self.reserve(new_capacity);
+            self.reserve(new_capacity - self.capacity);
         }
 
         unsafe {
@@ -351,7 +352,7 @@ impl<T, H: AllocHandle > SliceVec<T, H> {
         let old_len = self.slice.len;
 
         if self.capacity < len {
-            self.reserve(len);
+            self.reserve(len - old_len);
         }
 
         for i in old_len..len.saturating_sub(1) {
