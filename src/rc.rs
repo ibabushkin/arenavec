@@ -1,3 +1,14 @@
+//! This module provides a reference-counted arena implementation.
+//!
+//! This is primarily meant for usecases where the lifetime of the arena-allocated objects is
+//! overly hard (or impossible) to express in terms of Rust's lifetime facilities.
+//!
+//! This allows for greater flexibility, but has the drawback that unexpected behaviour can arise
+//! when arena-allocated objects block the clearing of the arena even though the user expects to be
+//! already invalidated.
+//!
+//! If you are not sure what arena to use, it's strongly suggested you try the `region` module
+//! first.
 use crate::common::{self, AllocHandle, ArenaBacking, ArenaError};
 
 use std::cell::Cell;
@@ -7,8 +18,7 @@ use std::rc::Rc;
 
 /// A reference-counting arena (non-MT-safe).
 ///
-/// Can be stored in a thread-local variable to be accessible everywhere in the owning thread.
-/// This is the only instance that can be used to clear the arena. All other objects referring to
+/// This is the only object that can be used to clear the arena. All other objects referring to
 /// the arena merely allow for allocation, and are present to avoid arena clearing while they are
 /// live.
 #[derive(Debug)]

@@ -1,3 +1,14 @@
+//! This module provides a statically-borrow-checked arena implementation.
+//!
+//! It is relatively intuitive to use -- all objects in the arena are tied to the lifetime of a
+//! so-called generation token that is handed exclusively by the arena. As soon as the token is
+//! dropped, the arena is cleared. This way, the borrow-checker statically verifies that no objects
+//! in the arena live beyond a certain point.
+//!
+//! The drawback of this approach is that some scenarios cannot be handled with statically-known
+//! lifetimes, for instance if the arena-allocated objects have dynamic lifetimes depending on user
+//! input or other factors only known at runtime. In such cases the reference-counted arena found
+//! in the `rc` module might be a better fit.
 use crate::common::{self, AllocHandle, ArenaBacking, ArenaError};
 
 use std::cell::Cell;

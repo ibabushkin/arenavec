@@ -1,3 +1,5 @@
+//! This module contains shared data structures and other functionality for use with the allocators
+//! implemented in this crate.
 use std::alloc::{alloc, dealloc, Layout};
 use std::cell::Cell;
 use std::cmp;
