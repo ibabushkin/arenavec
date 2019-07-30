@@ -7,7 +7,7 @@ description = "An arena backed implementation of vectors and related types."
 homepage = "https://github.com/ibabushkin/arenavec"
 repository = "https://github.com/ibabushkin/arenavec"
 readme = "README.md"
-keywords = ["arena", "data-structures", "vec", "split", "allocation", "fast"]
+keywords = ["arena", "data-structures", "vec", "allocation"]
 categories = ["algorithms", "data-structures", "memory-management"]
 edition = "2018"
 
