@@ -1,6 +1,6 @@
 [package]
 name = "arenavec"
-version = "0.1.0"
+version = "0.1.1"
 license = "MIT"
 authors = ["Inokentiy Babushkin <twk@twki.de>"]
 description = "An arena backed implementation of vectors and related types."
