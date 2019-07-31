@@ -92,7 +92,7 @@ impl Arena {
     /// Return a fresh generation token for the arena.
     ///
     /// If a generation of objects is currently live, an error is returned instead.
-    pub fn generation_token<'a>(&'a self) -> Result<ArenaToken<'a>, ArenaError> {
+    pub fn generation_token(&self) -> Result<ArenaToken<'_>, ArenaError> {
         if self.locked.get() {
             Err(ArenaError::AlreadyLocked)
         } else {

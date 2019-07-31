@@ -223,12 +223,12 @@ impl<T, H> Drop for Slice<T, H> {
 
 impl<T, H> SliceVec<T, H> {
     /// Create an immutable iterator over the elements of the vector.
-    pub fn iter<'a>(&'a self) -> slice::Iter<'a, T> {
+    pub fn iter(&self) -> slice::Iter<'_, T> {
         self.slice.iter()
     }
 
     /// Create an mutable iterator over the elements of the vector.
-    pub fn iter_mut<'a>(&'a mut self) -> slice::IterMut<'a, T> {
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, T> {
         self.slice.iter_mut()
     }
 }
