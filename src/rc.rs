@@ -87,9 +87,14 @@ impl Arena {
     /// This only requires an immutable reference, as it (a) perfors a check that
     /// no arena-allocated object is still alive (weak reason), and because all mutable
     /// state is neatly contained in a `Cell` (slightly stronger reason).
-    pub fn clear(&self) {
-        assert!(1 == Rc::strong_count(&self.inner));
-        self.inner.pos.set(0);
+    pub fn clear(&self) -> Result<(), ArenaError> {
+        if Rc::strong_count(&self.inner) == 1 {
+            self.inner.pos.set(0);
+
+            Ok(())
+        } else {
+            Err(ArenaError::CannotClear)
+        }
     }
 }
 

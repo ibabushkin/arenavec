@@ -19,6 +19,8 @@ pub enum ArenaError {
     AllocationFailed,
     /// If an arena is locked by some token type, it refuses locking when already locked.
     AlreadyLocked,
+    /// The arena is blocked from clearing by objects that are still live.
+    CannotClear,
 }
 
 /// The kind of backing requested for an arena.
