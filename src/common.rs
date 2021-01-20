@@ -77,13 +77,13 @@ impl<T, H: AllocHandle> Slice<T, H> {
         T: Default,
     {
         let mut res = unsafe { Self::new_empty(handle, len) };
-        res.len = len;
 
         for i in 0..len {
             unsafe {
                 ptr::write(res.ptr.as_ptr().add(i), T::default());
             }
         }
+        res.len = len;
 
         res
     }
@@ -433,13 +433,13 @@ impl<T, H: AllocHandle> SliceVec<T, H> {
             unsafe {
                 ptr::write(self.slice.ptr.as_ptr().add(len - 1), f());
             }
+            self.slice.len = len;
         } else if len < old_len {
+            self.slice.len = len;
             unsafe {
                 ptr::drop_in_place(&mut self.slice[len..old_len]);
             }
         }
-
-        self.slice.len = len;
     }
 
     /// Resize the vector to hold `len` elements, initialized to `value` if necessary.
@@ -461,13 +461,13 @@ impl<T, H: AllocHandle> SliceVec<T, H> {
             unsafe {
                 ptr::write(self.slice.ptr.as_ptr().add(len - 1), value);
             }
+            self.slice.len = len;
         } else if len < old_len {
+            self.slice.len = len;
             unsafe {
                 ptr::drop_in_place(&mut self.slice[len..old_len]);
             }
         }
-
-        self.slice.len = len;
     }
 
     /// Clone and append all elements in a slice to the vector.
